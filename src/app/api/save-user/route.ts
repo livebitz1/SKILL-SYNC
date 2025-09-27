@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
     const email = user.emailAddresses[0].emailAddress;
     const firstName = user.firstName;
     const lastName = user.lastName;
+    const imageUrl = user.imageUrl;
     const clerkId = user.id;
 
     // Check if user already exists in the database
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
           email,
           firstName,
           lastName,
+          imageUrl,
           updatedAt: new Date(),
         },
       });
@@ -42,6 +44,7 @@ export async function POST(req: NextRequest) {
           email,
           firstName,
           lastName,
+          imageUrl,
         },
       });
       return NextResponse.json({ message: 'User data saved successfully.', user: newUser });
