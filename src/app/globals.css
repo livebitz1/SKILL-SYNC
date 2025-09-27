@@ -138,3 +138,140 @@
 .loader-pop {
   animation: pop-in 200ms cubic-bezier(.22,.9,.3,1) both;
 }
+
+/* Hero particle styles */
+.particle-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden; /* ensure off-screen parts are clipped */
+}
+
+.particle {
+  position: absolute;
+  /* darker green and slightly more opaque for better visibility */
+  background: rgba(4, 120, 87, 0.92); /* teal-green darkened */
+  border: 1px solid rgba(4, 120, 87, 0.98);
+  border-radius: 9999px;
+  transform: translateX(0) scale(1);
+  will-change: transform, opacity;
+  opacity: 0;
+  box-shadow: 0 10px 30px rgba(4,120,87,0.06), 0 6px 12px rgba(4,120,87,0.04);
+}
+
+/* particles come from left */
+.particle.left {
+  left: -8%;
+  /* default duration; individual particles override with inline animationDuration */
+  animation: particle-move-left 7.5s cubic-bezier(.22,.9,.3,1) both infinite;
+}
+
+/* particles come from right */
+.particle.right {
+  right: -8%;
+  animation: particle-move-right 7.5s cubic-bezier(.22,.9,.3,1) both infinite;
+}
+
+@keyframes particle-move-left {
+  0% {
+    transform: translateX(0) translateY(0) scale(0.85);
+    opacity: 0;
+    filter: blur(0);
+  }
+  25% {
+    transform: translateX(10vw) translateY(-6px) scale(0.98);
+    opacity: 0.75;
+  }
+  50% {
+    transform: translateX(22vw) translateY(4px) scale(1.02);
+    opacity: 0.95;
+  }
+  /* fade to transparent as it nears the hero center */
+  70% {
+    transform: translateX(30vw) translateY(0) scale(0.98);
+    opacity: 0;
+    filter: blur(1px);
+  }
+  100% {
+    transform: translateX(30vw) translateY(0) scale(0.98);
+    opacity: 0;
+  }
+}
+
+@keyframes particle-move-right {
+  0% {
+    transform: translateX(0) translateY(0) scale(0.85);
+    opacity: 0;
+    filter: blur(0);
+  }
+  25% {
+    transform: translateX(-10vw) translateY(6px) scale(0.98);
+    opacity: 0.75;
+  }
+  50% {
+    transform: translateX(-22vw) translateY(-4px) scale(1.02);
+    opacity: 0.95;
+  }
+  /* fade to transparent as it nears the hero center */
+  70% {
+    transform: translateX(-30vw) translateY(0) scale(0.98);
+    opacity: 0;
+    filter: blur(1px);
+  }
+  100% {
+    transform: translateX(-30vw) translateY(0) scale(0.98);
+    opacity: 0;
+  }
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .particle.left,
+  .particle.right {
+    animation: none !important;
+    opacity: 0.25;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
+/* Ensure hero content sits above particles */
+main > .relative > section {
+  position: relative;
+  z-index: 1;
+}
+
+/* rotating last word in hero */
+.rotating-container {
+  display: inline-block;
+  position: relative;
+  vertical-align: baseline;
+  width: auto;
+  height: 1.15em; /* reserve space to avoid layout shift when words change */
+  overflow: hidden;
+}
+
+.rotating-word {
+  display: inline-block;
+  will-change: opacity;
+  /* Use an opacity-only animation for a minimal, sleek fade-in */
+  animation: hero-word-fade 600ms ease both;
+  opacity: 0; /* start hidden; animation brings to 1 */
+}
+
+@keyframes hero-word-fade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotating-word {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}

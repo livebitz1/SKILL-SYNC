@@ -89,13 +89,15 @@ export default function ProjectsPage() {
   })
 
   // Fetch projects from API with current filters
-  async function fetchProjects() {
+  const fetchProjects = React.useCallback(async () => {
     try {
+      // Abort previous request
       if (abortRef.current) abortRef.current.abort()
       const ac = new AbortController()
       abortRef.current = ac
       setLoadingProjects(true)
       setFetchError(null)
+
       const params = new URLSearchParams()
       if (query) params.set('q', query)
       if (category) params.set('category', category)
@@ -105,33 +107,31 @@ export default function ProjectsPage() {
 
       const res = await fetch(`/api/projects?${params.toString()}`, { signal: ac.signal })
       if (!res.ok) {
-        // set a user-visible error and bail out quietly
         setFetchError('Unable to load projects. Please try again later.')
         setProjects([])
         return
       }
       const data = await res.json()
-      setProjects(Array.isArray(data) ? data as Project[] : [])
+      setProjects(Array.isArray(data) ? (data as Project[]) : [])
       setFetchError(null)
     } catch (err) {
-      if ((err as unknown as { name?: string })?.name === 'AbortError') return
-      // avoid noisy console errors in production; set compact error state
+      if ((err as { name?: string })?.name === 'AbortError') return
       setFetchError('Unable to load projects. Please try again later.')
     } finally {
       setLoadingProjects(false)
     }
-  }
+  }, [query, category, difficulty, status, maxDuration])
 
   // debounce effect for fetching when filters change
   useEffect(() => {
     if (fetchRef.current) window.clearTimeout(fetchRef.current)
     fetchRef.current = window.setTimeout(() => {
-      fetchProjects()
+      void fetchProjects()
     }, 300)
     return () => {
       if (fetchRef.current) window.clearTimeout(fetchRef.current)
     }
-  }, [query, category, difficulty, status, maxDuration])
+  }, [fetchProjects])
 
   // modal
   const [selected, setSelected] = useState<Project | null>(null)
@@ -364,101 +364,123 @@ export default function ProjectsPage() {
 
               {/* Desktop filters */}
               <div className="hidden md:flex md:items-center md:gap-3 md:ml-4">
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="p-2 border border-gray-200 rounded-full bg-white text-sm"
+                <div className="flex items-center gap-2 bg-white p-1 rounded-full border border-gray-200">
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="p-2 bg-transparent text-sm rounded-full border-none outline-none"
+                    aria-label="Filter by category"
+                  >
+                    {categories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={difficulty}
+                    onChange={(e) => setDifficulty(e.target.value)}
+                    className="p-2 bg-transparent text-sm rounded-full border-none outline-none"
+                    aria-label="Filter by difficulty"
+                  >
+                    {difficulties.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="p-2 bg-transparent text-sm rounded-full border-none outline-none"
+                    aria-label="Filter by status"
+                  >
+                    <option value="All">All</option>
+                    <option value="Open">Open</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="Max wk"
+                    value={maxDuration ?? ""}
+                    onChange={(e) => setMaxDuration(e.target.value ? Number(e.target.value) : null)}
+                    className="w-20 p-2 bg-transparent text-sm rounded-full border-none outline-none"
+                    aria-label="Max duration weeks"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => { setQuery(''); setCategory('All'); setDifficulty('All'); setStatus('All'); setMaxDuration(null); }}
+                  className="text-sm text-gray-600 px-3 py-2"
+                  aria-label="Clear filters"
                 >
-                  {categories.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-                <select
-                  value={difficulty}
-                  onChange={(e) => setDifficulty(e.target.value)}
-                  className="p-2 border border-gray-200 rounded-full bg-white text-sm"
-                >
-                  {difficulties.map((d) => (
-                    <option key={d}>{d}</option>
-                  ))}
-                </select>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="p-2 border border-gray-200 rounded-full bg-white text-sm"
-                >
-                  <option>All</option>
-                  <option>Open</option>
-                  <option>Closed</option>
-                </select>
-                <input
-                  type="number"
-                  min={1}
-                  placeholder="Max wk"
-                  value={maxDuration ?? ""}
-                  onChange={(e) => setMaxDuration(e.target.value ? Number(e.target.value) : null)}
-                  className="w-24 p-2 border border-gray-200 rounded-full bg-white text-sm"
-                />
+                  Clear
+                </button>
               </div>
             </div>
 
             {/* Collapsible filters for small screens */}
-            {showFilters && (
-              <div className="mt-4 space-y-3 md:hidden">
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Category</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full mt-1 p-2 border border-gray-200 rounded-full bg-white"
-                  >
-                    {categories.map((c) => (
-                      <option key={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
+             {showFilters && (
+               <div className="mt-4 space-y-3 md:hidden">
+                 <div>
+                   <label className="text-xs font-medium text-gray-600">Category</label>
+                   <select
+                     value={category}
+                     onChange={(e) => setCategory(e.target.value)}
+                     className="w-full mt-1 p-2 border border-gray-200 rounded-full bg-white"
+                   >
+                     {categories.map((c) => (
+                       <option key={c}>{c}</option>
+                     ))}
+                   </select>
+                 </div>
 
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Difficulty</label>
-                  <select
-                    value={difficulty}
-                    onChange={(e) => setDifficulty(e.target.value)}
-                    className="w-full mt-1 p-2 border border-gray-200 rounded-full bg-white"
-                  >
-                    {difficulties.map((d) => (
-                      <option key={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
+                 <div>
+                   <label className="text-xs font-medium text-gray-600">Difficulty</label>
+                   <select
+                     value={difficulty}
+                     onChange={(e) => setDifficulty(e.target.value)}
+                     className="w-full mt-1 p-2 border border-gray-200 rounded-full bg-white"
+                   >
+                     {difficulties.map((d) => (
+                       <option key={d}>{d}</option>
+                     ))}
+                   </select>
+                 </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <label className="text-xs font-medium text-gray-600">Max Duration (weeks)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      placeholder="e.g., 6"
-                      value={maxDuration ?? ""}
-                      onChange={(e) => setMaxDuration(e.target.value ? Number(e.target.value) : null)}
-                      className="w-full mt-1 p-2 border border-gray-200 rounded-full bg-white"
-                    />
-                  </div>
+                 <div className="flex items-center gap-3">
+                   <div className="flex-1">
+                     <label className="text-xs font-medium text-gray-600">Max Duration (weeks)</label>
+                     <input
+                       type="number"
+                       min={1}
+                       placeholder="e.g., 6"
+                       value={maxDuration ?? ""}
+                       onChange={(e) => setMaxDuration(e.target.value ? Number(e.target.value) : null)}
+                       className="w-full mt-1 p-2 border border-gray-200 rounded-full bg-white"
+                     />
+                   </div>
 
-                  <div className="w-32">
-                    <label className="text-xs font-medium text-gray-600">Status</label>
-                    <select
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value)}
-                      className="w-full mt-1 p-2 border border-gray-200 rounded-full bg-white"
-                    >
-                      <option>All</option>
-                      <option>Open</option>
-                      <option>Closed</option>
-                    </select>
-                  </div>
+                   <div className="w-32">
+                     <label className="text-xs font-medium text-gray-600">Status</label>
+                     <select
+                       value={status}
+                       onChange={(e) => setStatus(e.target.value)}
+                       className="w-full mt-1 p-2 border border-gray-200 rounded-full bg-white"
+                     >
+                       <option>All</option>
+                       <option>Open</option>
+                       <option>Closed</option>
+                     </select>
+                   </div>
+                 </div>
+
+                <div className="flex justify-end">
+                  <button type="button" onClick={() => { setQuery(''); setCategory('All'); setDifficulty('All'); setStatus('All'); setMaxDuration(null); setShowFilters(false); }} className="text-sm text-gray-600">Clear</button>
                 </div>
-              </div>
-            )}
+               </div>
+             )}
           </div>
         </div>
       </header>
