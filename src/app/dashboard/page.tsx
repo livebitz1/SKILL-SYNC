@@ -280,10 +280,6 @@ function ProfileHeader() {
           });
   
           if (!response.ok) {
-            const errorData = await response.json();
-            console.error("API response error:", errorData);
-            // Suppress the error from being thrown to avoid console errors on successful update scenarios
-            // For further debugging, consider adding specific status code handling here.
             return; // Exit the function gracefully
           }
           console.log("User data saved on authentication successfully.");

@@ -4,7 +4,17 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Search, Github, Linkedin, Globe, Mail, User, Filter, Users } from 'lucide-react';
+import { Search, Github, Linkedin, Globe, Mail, User, Filter, Users, Eye } from 'lucide-react';
+import Navbar from "@/components/Navbar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 
 interface Skill {
   id: string;
@@ -33,7 +43,11 @@ export default function LearnPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [mentorCount, setMentorCount] = useState<number>(0);
-  
+
+  // New state to manage inspect dialog
+  const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
   useEffect(() => {
     async function fetchUsersWithSkills() {
       try {
@@ -86,6 +100,12 @@ export default function LearnPage() {
     }
   };
 
+  // helper to open inspect dialog
+  const openInspectDialog = (user: User) => {
+    setSelectedUser(user);
+    setIsDialogOpen(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center">
@@ -108,6 +128,7 @@ export default function LearnPage() {
 
   return (
     <div className="min-h-screen bg-white">
+      <Navbar />
       {/* Header Section */}
       <div className="bg-gray-50 border-b border-gray-200">
         <div className="container mx-auto px-4 py-8 relative">
@@ -160,7 +181,7 @@ export default function LearnPage() {
             {filteredUsers.map((user) => (
               <Card key={user.id} className="bg-white hover:shadow-lg transition-all duration-300 border border-black shadow-sm hover:scale-[1.02]">
                 <CardHeader className="pb-3">
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-3 w-full">
                     <Avatar className="w-12 h-12 ring-1 ring-gray-200">
                       <AvatarImage src={user.imageUrl} alt={`${user.firstName} ${user.lastName}`} />
                       <AvatarFallback className="bg-gray-800 text-white text-sm font-semibold">
@@ -175,6 +196,18 @@ export default function LearnPage() {
                         <Mail className="w-3.5 h-3.5 mr-1 flex-shrink-0 text-gray-500" />
                         <span className="truncate">{user.email}</span>
                       </div>
+                    </div>
+
+                    {/* Inspect (eye) button */}
+                    <div className="ml-2 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openInspectDialog(user)}
+                        aria-label={`Inspect ${user.firstName} ${user.lastName}`}
+                      >
+                        <Eye className="w-4 h-4 text-gray-600" />
+                      </Button>
                     </div>
                   </div>
                 </CardHeader>
@@ -250,6 +283,77 @@ export default function LearnPage() {
           </div>
         )}
       </div>
+
+      {/* Inspect Dialog - shows detailed user profile when eye button is clicked */}
+      <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) setSelectedUser(null); setIsDialogOpen(open); }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Profile</DialogTitle>
+            <DialogDescription>View full profile and skills</DialogDescription>
+          </DialogHeader>
+
+          {selectedUser ? (
+            <div className="grid gap-4">
+              <div className="flex items-center gap-4">
+                <Avatar className="w-20 h-20 ring-1 ring-gray-200">
+                  <AvatarImage src={selectedUser.imageUrl} alt={`${selectedUser.firstName} ${selectedUser.lastName}`} />
+                  <AvatarFallback className="bg-gray-800 text-white text-lg font-semibold">
+                    {selectedUser.firstName?.[0]}{selectedUser.lastName?.[0]}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">{selectedUser.firstName} {selectedUser.lastName}</h3>
+                  <div className="flex items-center text-sm text-gray-600 mt-1">
+                    <Mail className="w-4 h-4 mr-2 text-gray-500" />
+                    <a href={`mailto:${selectedUser.email}`} className="underline hover:text-gray-900">{selectedUser.email}</a>
+                  </div>
+
+                  <div className="flex gap-2 mt-2">
+                    {selectedUser.githubUrl && (
+                      <a href={selectedUser.githubUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200">
+                        <Github className="w-4 h-4" />
+                        <span className="text-sm">GitHub</span>
+                      </a>
+                    )}
+                    {selectedUser.linkedinUrl && (
+                      <a href={selectedUser.linkedinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200">
+                        <Linkedin className="w-4 h-4" />
+                        <span className="text-sm">LinkedIn</span>
+                      </a>
+                    )}
+                    {selectedUser.portfolioUrl && (
+                      <a href={selectedUser.portfolioUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200">
+                        <Globe className="w-4 h-4" />
+                        <span className="text-sm">Portfolio</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium text-gray-900 mb-2">Skills</h4>
+                {selectedUser.skills.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedUser.skills.map((s) => (
+                      <div key={s.id} className={`px-3 py-1 rounded-md border ${getSkillLevelColor(s.level)}`}>
+                        <div className="text-sm font-medium text-gray-900">{s.name}</div>
+                        <div className="text-xs text-gray-700">{s.level} • {s.category}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No skills added yet.</p>
+                )}
+              </div>
+
+            </div>
+          ) : (
+            <div className="py-6 text-center text-sm text-gray-600">Loading profile…</div>
+          )}
+
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
