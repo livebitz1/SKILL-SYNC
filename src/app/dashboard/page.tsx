@@ -24,7 +24,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { useUser } from "@clerk/nextjs"
 import Image from "next/image";
 import Navbar from "@/components/Navbar";
@@ -54,7 +54,10 @@ import {
   Calendar,
   UploadCloud,
   ExternalLink,
+  Loader2,
 } from "lucide-react"
+
+import { io } from "socket.io-client";
 
 import { cn } from "@/lib/utils"
 
@@ -90,6 +93,7 @@ import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line } from "recharts";
+import { toast } from "react-hot-toast";
 
 // Types
 type SkillLevel = "Beginner" | "Intermediate" | "Advanced" | "Expert"
@@ -254,7 +258,11 @@ function ProfileHeader() {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="flex items-center gap-4">
               <Avatar className="h-16 w-16">
-                <AvatarFallback>{name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                {user?.imageUrl ? (
+                  <AvatarImage src={user.imageUrl} alt={name} />
+                ) : (
+                  <AvatarFallback>{name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                )}
               </Avatar>
               <div className="space-y-1">
                 <h1 className="text-2xl font-semibold tracking-tight text-balance">{name}</h1>
@@ -385,8 +393,61 @@ function QuickActions() {
 }
 
 function SkillsSection() {
-  const [learned, setLearned] = useState<Skill[]>(initialLearnedSkills)
-  const [taught, setTaught] = useState<Skill[]>(initialTaughtSkills)
+  const [learned, setLearned] = useState<Skill[]>([])
+  const [taught, setTaught] = useState<Skill[]>([])
+  const { isSignedIn, user } = useUser()
+
+  useEffect(() => {
+    if (user) {
+      fetchSkills();
+    }
+  }, [user]);
+
+  // WebSocket connection and event handling
+  useEffect(() => {
+    const socket = io("http://localhost:3001"); // Connect to standalone Socket.IO server
+
+    socket.on("connect", () => {
+      console.log("Connected to WebSocket server");
+    });
+
+    socket.on("skillAdded", (newSkill: Skill) => {
+      console.log("Skill added via WebSocket:", newSkill);
+      if (newSkill.type === "learned") {
+        setLearned((prev) => [newSkill, ...prev]);
+      } else {
+        setTaught((prev) => [newSkill, ...prev]);
+      }
+    });
+
+    socket.on("skillRemoved", (skillId: string) => {
+      console.log("Skill removed via WebSocket:", skillId);
+      setLearned((prev) => prev.filter((skill) => skill.id !== skillId));
+      setTaught((prev) => prev.filter((skill) => skill.id !== skillId));
+    });
+
+    socket.on("disconnect", () => {
+      console.log("Disconnected from WebSocket server");
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  const fetchSkills = async () => {
+    try {
+      const response = await fetch("/api/user-skills");
+      if (!response.ok) {
+        throw new Error(`Error: ${response.status}`);
+      }
+      const data: Skill[] = await response.json();
+      setLearned(data.filter(s => s.type === "learned"));
+      setTaught(data.filter(s => s.type === "taught"));
+    } catch (error) {
+      console.error("Failed to fetch skills:", error);
+    }
+  };
 
   // Dialog state
   const [open, setOpen] = useState(false)
@@ -394,28 +455,85 @@ function SkillsSection() {
   const [newSkillLevel, setNewSkillLevel] = useState<SkillLevel>("Beginner")
   const [newSkillCategory, setNewSkillCategory] = useState<Skill["category"]>("Frontend")
   const [newSkillType, setNewSkillType] = useState<Skill["type"]>("learned")
+  const [isSavingSkill, setIsSavingSkill] = useState(false)
+  const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [skillToEdit, setSkillToEdit] = useState<Skill | null>(null)
 
   const totalSkills = learned.length + taught.length
 
-  function addSkill() {
-    const trimmed = newSkillName.trim()
-    if (!trimmed) return
-    const skill: Skill = {
-      id: uid(),
-      name: trimmed,
-      level: newSkillLevel,
-      category: newSkillCategory,
-      type: newSkillType,
+  async function handleSaveSkill() {
+    if (!user) {
+      toast.error("You need to be logged in to add a skill.");
+      return; // Ensure user is logged in
     }
-    if (newSkillType === "learned") setLearned((s) => [skill, ...s])
-    else setTaught((s) => [skill, ...s])
+    const trimmed = newSkillName.trim()
+    if (!trimmed) {
+      toast.error("Skill name cannot be empty.");
+      return;
+    }
 
-    // Reset form
-    setNewSkillName("")
-    setNewSkillLevel("Beginner")
-    setNewSkillCategory("Frontend")
-    setNewSkillType("learned")
-    setOpen(false)
+    try {
+      setIsSavingSkill(true)
+      const response = await fetch("/api/user-skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+          level: newSkillLevel,
+          category: newSkillCategory,
+          type: newSkillType,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Error: ${errorData.message || response.status}`);
+      }
+
+      toast.success("Skill added successfully!")
+      setNewSkillName("")
+      setNewSkillLevel("Beginner")
+      setNewSkillCategory("Frontend")
+      setNewSkillType("learned")
+      setOpen(false)
+      // await fetchSkills(); // Removed direct fetch, relying on WebSocket
+    } catch (error) {
+      console.error("Failed to add skill:", error);
+      toast.error(`Failed to add skill: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSavingSkill(false)
+    }
+  }
+
+  async function removeSkill(id: string, type: Skill["type"]) {
+    if (!user) {
+      toast.error("You need to be logged in to remove a skill.");
+      return;
+    }
+    try {
+      setDeletingSkillId(id);
+      const response = await fetch("/api/user-skills", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Error: ${errorData.message || response.status}`);
+      }
+
+      if (type === "learned") setLearned((s) => s.filter(skill => skill.id !== id));
+      else setTaught((s) => s.filter(skill => skill.id !== id));
+      toast.success("Skill removed successfully!");
+      // No direct fetch needed, WebSocket will update
+    } catch (error) {
+      console.error("Failed to remove skill:", error);
+      toast.error(`Failed to remove skill: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setDeletingSkillId(null);
+    }
   }
 
   const levelColor = (level: SkillLevel) => {
@@ -512,7 +630,8 @@ function SkillsSection() {
                   Cancel
                 </Button>
               </DialogClose>
-              <Button onClick={addSkill} className="rounded-full">
+              <Button onClick={handleSaveSkill} disabled={isSavingSkill}>
+                {isSavingSkill && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Save
               </Button>
             </DialogFooter>
@@ -535,6 +654,9 @@ function SkillsSection() {
                 <Badge key={s.id} variant="outline" className="px-3 py-1 rounded-full">
                   <span className="mr-2">{s.name}</span>
                   <span className={cn("text-xs px-2 py-0.5 rounded-full", levelColor(s.level))}>{s.level}</span>
+                  <Button variant="ghost" size="icon" className="ml-1 h-4 w-4 rounded-full" onClick={() => removeSkill(s.id, s.type)} disabled={deletingSkillId === s.id}>
+                    {deletingSkillId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                  </Button>
                 </Badge>
               ))}
               {learned.length === 0 && <p className="text-sm text-muted-foreground">No learned skills yet.</p>}
@@ -556,6 +678,9 @@ function SkillsSection() {
                 <Badge key={s.id} variant="outline" className="px-3 py-1 rounded-full">
                   <span className="mr-2">{s.name}</span>
                   <span className={cn("text-xs px-2 py-0.5 rounded-full", levelColor(s.level))}>{s.level}</span>
+                  <Button variant="ghost" size="icon" className="ml-1 h-4 w-4 rounded-full" onClick={() => removeSkill(s.id, s.type)} disabled={deletingSkillId === s.id}>
+                    {deletingSkillId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                  </Button>
                 </Badge>
               ))}
               {taught.length === 0 && <p className="text-sm text-muted-foreground">No taught skills yet.</p>}
