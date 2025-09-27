@@ -26,6 +26,7 @@ model User {
   githubUrl String?
   linkedinUrl String?
   portfolioUrl String?
+  showProfileInLearn Boolean @default(true)
 }
 
 model Skill {

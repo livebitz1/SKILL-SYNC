@@ -94,6 +94,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line } from "recharts";
 import { toast } from "react-hot-toast";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 // Import the new SkillFormDialog component
 import { SkillFormDialog } from "@/components/SkillFormDialog";
@@ -264,12 +266,29 @@ function ProfileHeader() {
   const [editingGithubUrl, setEditingGithubUrl] = useState(githubUrl);
   const [editingLinkedinUrl, setEditingLinkedinUrl] = useState(linkedinUrl);
   const [editingPortfolioUrl, setEditingPortfolioUrl] = useState(portfolioUrl);
+  const [showProfileInLearn, setShowProfileInLearn] = useState(true);
 
   useEffect(() => {
     if (user) {
       setGithubUrl(user.publicMetadata?.githubUrl as string || "");
       setLinkedinUrl(user.publicMetadata?.linkedinUrl as string || "");
       setPortfolioUrl(user.publicMetadata?.portfolioUrl as string || "");
+      // Fetch the showProfileInLearn status
+      const fetchProfileVisibility = async () => {
+        try {
+          const response = await fetch('/api/update-profile-visibility'); // Use new API to fetch initial state
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data = await response.json();
+          if (typeof data.showProfileInLearn === 'boolean') {
+            setShowProfileInLearn(data.showProfileInLearn);
+          }
+        } catch (error) {
+          console.error("Error fetching profile visibility:", error);
+        }
+      };
+      fetchProfileVisibility();
 
       setEditingGithubUrl(user.publicMetadata?.githubUrl as string || "");
       setEditingLinkedinUrl(user.publicMetadata?.linkedinUrl as string || "");
@@ -290,6 +309,7 @@ function ProfileHeader() {
               githubUrl: user.publicMetadata?.githubUrl || "",
               linkedinUrl: user.publicMetadata?.linkedinUrl || "",
               portfolioUrl: user.publicMetadata?.portfolioUrl || "",
+              // Do not send showProfileInLearn here to avoid overwriting on initial save
             }),
           });
   
@@ -345,6 +365,33 @@ function ProfileHeader() {
     }
   }
 
+  async function handleToggleProfileVisibility(checked: boolean) {
+    if (!user) {
+      toast.error("You need to be logged in to change profile visibility.");
+      return;
+    }
+    try {
+      setShowProfileInLearn(checked); // Optimistic update
+
+      const response = await fetch("/api/update-profile-visibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ showProfile: checked }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update profile visibility.");
+      }
+
+      toast.success(checked ? "Profile is now visible on Learn page." : "Profile is now hidden from Learn page.");
+    } catch (error) {
+      console.error("Failed to update profile visibility:", error);
+      toast.error(`Failed to update profile visibility: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setShowProfileInLearn(!checked); // Revert on error
+    }
+  }
+
   return (
     <section aria-label="Profile header" className="container mx-auto px-4 pt-8">
       <Card className="border shadow-sm">
@@ -376,7 +423,7 @@ function ProfileHeader() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end gap-3 md:items-center md:flex-row">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -454,6 +501,16 @@ function ProfileHeader() {
               <p className="text-sm font-medium">{email}</p>
             </div>
             <div className="flex items-center gap-2">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="show-profile-in-learn"
+                  checked={showProfileInLearn}
+                  onCheckedChange={handleToggleProfileVisibility}
+                />
+                <Label htmlFor="show-profile-in-learn" className="text-sm text-muted-foreground">
+                  Show profile on Learn page
+                </Label>
+              </div>
               <Button variant="default" className="rounded-full">
                 <Rocket className="h-4 w-4 mr-2" />
                 Continue Learning
