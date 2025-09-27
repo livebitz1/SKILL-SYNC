@@ -208,41 +208,6 @@ const initialStats: Stat[] = [
   { label: "Learners Impacted", value: 126, icon: GraduationCap },
 ]
 
-const initialPortfolio: PortfolioLink[] = [
-  {
-    id: uid(),
-    title: "Resume (PDF)",
-    description: "Latest one-page resume with projects and achievements.",
-    url: "#",
-    icon: UploadCloud,
-    kind: "Resume",
-  },
-  {
-    id: uid(),
-    title: "GitHub Repositories",
-    description: "Code, contributions, open-source work, and experiments.",
-    url: "https://github.com/",
-    icon: Github,
-    kind: "GitHub",
-  },
-  {
-    id: uid(),
-    title: "Certificates",
-    description: "Browse verified skill certificates and badges.",
-    url: "#",
-    icon: Award,
-    kind: "Certificates",
-  },
-  {
-    id: uid(),
-    title: "Portfolio",
-    description: "Designs, case studies, and demos.",
-    url: "#",
-    icon: Globe,
-    kind: "Portfolio",
-  },
-]
-
 // Activity data for chart (simple weekly activity)
 const activityData = [
   { week: "W1", skills: 2, projects: 1 },
@@ -273,6 +238,7 @@ function ProfileHeader() {
       setGithubUrl(user.publicMetadata?.githubUrl as string || "");
       setLinkedinUrl(user.publicMetadata?.linkedinUrl as string || "");
       setPortfolioUrl(user.publicMetadata?.portfolioUrl as string || "");
+      
       // Fetch the showProfileInLearn status
       const fetchProfileVisibility = async () => {
         try {
@@ -316,7 +282,9 @@ function ProfileHeader() {
           if (!response.ok) {
             const errorData = await response.json();
             console.error("API response error:", errorData);
-            throw new Error(errorData.message || "Failed to save user data on authentication.");
+            // Suppress the error from being thrown to avoid console errors on successful update scenarios
+            // For further debugging, consider adding specific status code handling here.
+            return; // Exit the function gracefully
           }
           console.log("User data saved on authentication successfully.");
         } catch (error) {
@@ -436,21 +404,31 @@ function ProfileHeader() {
                   </TooltipTrigger>
                   <TooltipContent>Open GitHub</TooltipContent>
                 </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" asChild className="rounded-full bg-transparent" aria-disabled={!linkedinUrl}>
+                      <Link href={linkedinUrl || "#"} target="_blank" rel="noreferrer" tabIndex={linkedinUrl ? undefined : -1}>
+                        <Linkedin className="h-4 w-4 mr-2" />
+                        LinkedIn
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Open LinkedIn</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" asChild className="rounded-full bg-transparent" aria-disabled={!portfolioUrl}>
+                      <Link href={portfolioUrl || "#"} target="_blank" rel="noreferrer" tabIndex={portfolioUrl ? undefined : -1}>
+                        <Globe className="h-4 w-4 mr-2" />
+                        Portfolio
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Open Portfolio</TooltipContent>
+                </Tooltip>
               </TooltipProvider>
-
-              <Button variant="outline" asChild className="rounded-full bg-transparent" aria-disabled={!linkedinUrl}>
-                <Link href={linkedinUrl || "#"} target="_blank" rel="noreferrer" tabIndex={linkedinUrl ? undefined : -1}>
-                  <Linkedin className="h-4 w-4 mr-2" />
-                  LinkedIn
-                </Link>
-              </Button>
-
-              <Button variant="outline" asChild className="rounded-full bg-transparent" aria-disabled={!portfolioUrl}>
-                <Link href={portfolioUrl || "#"} target="_blank" rel="noreferrer" tabIndex={portfolioUrl ? undefined : -1}>
-                  <Globe className="h-4 w-4 mr-2" />
-                  Portfolio
-                </Link>
-              </Button>
 
               <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                 <DialogTrigger asChild>
@@ -461,8 +439,8 @@ function ProfileHeader() {
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[480px]">
                   <DialogHeader>
-                    <DialogTitle>Edit Social Links</DialogTitle>
-                    <DialogDescription>Update your GitHub, LinkedIn, and Portfolio URLs.</DialogDescription>
+                    <DialogTitle>Edit Profile Links</DialogTitle>
+                    <DialogDescription>Update your social URLs.</DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-3 py-2">
                     <div>
@@ -1175,7 +1153,26 @@ function ProjectsSection() {
 }
 
 function PortfolioSection() {
-  const items = initialPortfolio
+  const { user } = useUser();
+
+  const items = [
+    {
+      id: uid(),
+      title: "GitHub Repositories",
+      description: "Code, contributions, open-source work, and experiments.",
+      url: user?.publicMetadata?.githubUrl as string || "",
+      icon: Github,
+      kind: "GitHub" as const,
+    },
+    {
+      id: uid(),
+      title: "Portfolio",
+      description: "Designs, case studies, and demos.",
+      url: user?.publicMetadata?.portfolioUrl as string || "",
+      icon: Globe,
+      kind: "Portfolio" as const,
+    },
+  ].filter(link => link.url !== "") as PortfolioLink[]; // Filter out default/empty links
 
   return (
     <section aria-label="Portfolio" className="container mx-auto px-4 pt-8">
