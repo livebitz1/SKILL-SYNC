@@ -16,7 +16,7 @@ export default function HeroSection() {
         </p>
         <div className="mt-8">  
           <Link
-            href="/skills"
+            href="/dashboard"
             className="inline-flex items-center justify-center rounded-lg bg-green-600 px-6 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2"
           >
             Get Started

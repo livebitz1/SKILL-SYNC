@@ -18,13 +18,6 @@ export default function HomePage() {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              id: user.id,
-              email: user.emailAddresses[0]?.emailAddress,
-              firstName: user.firstName,
-              lastName: user.lastName,
-              imageUrl: user.imageUrl,
-            }),
           });
 
           const data = await response.json();

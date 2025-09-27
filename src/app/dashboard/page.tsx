@@ -254,7 +254,6 @@ function ProfileHeader() {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="flex items-center gap-4">
               <Avatar className="h-16 w-16">
-                <AvatarImage src="/placeholder-user.jpg" alt={name} />
                 <AvatarFallback>{name.slice(0, 2).toUpperCase()}</AvatarFallback>
               </Avatar>
               <div className="space-y-1">
