@@ -14,7 +14,7 @@ export default function HeroSection() {
         <p className="mt-4 text-balance text-base leading-relaxed text-foreground/70 md:text-lg">
           A platform where learners, mentors, and collaborators connect to gain real-world experience.
         </p>
-        <div className="mt-8">
+        <div className="mt-8">  
           <Link
             href="/skills"
             className="inline-flex items-center justify-center rounded-lg bg-green-600 px-6 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2"
