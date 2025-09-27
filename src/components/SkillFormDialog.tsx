@@ -129,8 +129,8 @@ export function SkillFormDialog({ open, onOpenChange, onSaveSkill }: SkillFormDi
                 aria-invalid={!canSave && trimmedName.length > 0 ? true : undefined}
                 aria-describedby="skill-name-hint skill-name-count"
                 onChange={(e) => setNewSkillName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.isComposing) {
+                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                     e.preventDefault()
                     if (e.shiftKey) {
                       if (canSave && !isSavingSkill) handleSave(true)

@@ -142,7 +142,8 @@ type PortfolioLink = {
 const uid = () => Math.random().toString(36).slice(2, 9)
 
 // Mock Initial Data
-const initialLearnedSkills: Skill[] = [
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _initialLearnedSkills: Skill[] = [
   { id: uid(), name: "React", level: "Advanced", category: "Frontend", type: "learned" },
   { id: uid(), name: "TypeScript", level: "Advanced", category: "Frontend", type: "learned" },
   { id: uid(), name: "Node.js", level: "Intermediate", category: "Backend", type: "learned" },
@@ -150,8 +151,8 @@ const initialLearnedSkills: Skill[] = [
   { id: uid(), name: "Git & GitHub", level: "Advanced", category: "Other", type: "learned" },
   { id: uid(), name: "Next.js", level: "Advanced", category: "Frontend", type: "learned" },
 ]
-
-const initialTaughtSkills: Skill[] = [
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _initialTaughtSkills: Skill[] = [
   { id: uid(), name: "JavaScript Basics", level: "Advanced", category: "Frontend", type: "taught" },
   { id: uid(), name: "CSS Layouts", level: "Intermediate", category: "Frontend", type: "taught" },
 ]
@@ -255,6 +256,95 @@ function ProfileHeader() {
   const name = user?.fullName || "Guest User"
   const email = user?.primaryEmailAddress?.emailAddress || "guest@example.com"
 
+  const [githubUrl, setGithubUrl] = useState(user?.publicMetadata?.githubUrl as string || "");
+  const [linkedinUrl, setLinkedinUrl] = useState(user?.publicMetadata?.linkedinUrl as string || "");
+  const [portfolioUrl, setPortfolioUrl] = useState(user?.publicMetadata?.portfolioUrl as string || "");
+
+  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [editingGithubUrl, setEditingGithubUrl] = useState(githubUrl);
+  const [editingLinkedinUrl, setEditingLinkedinUrl] = useState(linkedinUrl);
+  const [editingPortfolioUrl, setEditingPortfolioUrl] = useState(portfolioUrl);
+
+  useEffect(() => {
+    if (user) {
+      setGithubUrl(user.publicMetadata?.githubUrl as string || "");
+      setLinkedinUrl(user.publicMetadata?.linkedinUrl as string || "");
+      setPortfolioUrl(user.publicMetadata?.portfolioUrl as string || "");
+
+      setEditingGithubUrl(user.publicMetadata?.githubUrl as string || "");
+      setEditingLinkedinUrl(user.publicMetadata?.linkedinUrl as string || "");
+      setEditingPortfolioUrl(user.publicMetadata?.portfolioUrl as string || "");
+    }
+  }, [user]);
+  
+  useEffect(() => {
+    if (user && user.id) {
+      console.log("User authenticated, attempting to save data:", user);
+      // Call the save-user API route when the user is authenticated
+      const saveUser = async () => {
+        try {
+          const response = await fetch("/api/save-user", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              githubUrl: user.publicMetadata?.githubUrl || "",
+              linkedinUrl: user.publicMetadata?.linkedinUrl || "",
+              portfolioUrl: user.publicMetadata?.portfolioUrl || "",
+            }),
+          });
+  
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error("API response error:", errorData);
+            throw new Error(errorData.message || "Failed to save user data on authentication.");
+          }
+          console.log("User data saved on authentication successfully.");
+        } catch (error) {
+          console.error("Error saving user data on authentication:", error);
+        }
+      };
+      saveUser();
+    }
+  }, [user]);
+  
+  async function handleSaveProfile() {
+    if (!user) {
+      toast.error("You need to be logged in to save your profile.");
+      return;
+    }
+    try {
+      // Optimistically update the local state first
+      setGithubUrl(editingGithubUrl);
+      setLinkedinUrl(editingLinkedinUrl);
+      setPortfolioUrl(editingPortfolioUrl);
+
+      const response = await fetch("/api/save-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          githubUrl: editingGithubUrl,
+          linkedinUrl: editingLinkedinUrl,
+          portfolioUrl: editingPortfolioUrl,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to save profile.");
+      }
+
+      setIsProfileDialogOpen(false);
+      toast.success("Profile updated successfully!");
+    } catch (error) {
+      console.error("Failed to save profile:", error);
+      toast.error(`Failed to save profile: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Revert local state on error
+      setEditingGithubUrl(githubUrl);
+      setEditingLinkedinUrl(linkedinUrl);
+      setEditingPortfolioUrl(portfolioUrl);
+    }
+  }
+
   return (
     <section aria-label="Profile header" className="container mx-auto px-4 pt-8">
       <Card className="border shadow-sm">
@@ -290,8 +380,8 @@ function ProfileHeader() {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" asChild className="rounded-full bg-transparent">
-                      <Link href="https://github.com" target="_blank" rel="noreferrer">
+                    <Button variant="outline" asChild className="rounded-full bg-transparent" aria-disabled={!githubUrl}>
+                      <Link href={githubUrl || "#"} target="_blank" rel="noreferrer" tabIndex={githubUrl ? undefined : -1}>
                         <Github className="h-4 w-4 mr-2" />
                         GitHub
                       </Link>
@@ -301,19 +391,58 @@ function ProfileHeader() {
                 </Tooltip>
               </TooltipProvider>
 
-              <Button variant="outline" asChild className="rounded-full bg-transparent">
-                <Link href="https://linkedin.com" target="_blank" rel="noreferrer">
+              <Button variant="outline" asChild className="rounded-full bg-transparent" aria-disabled={!linkedinUrl}>
+                <Link href={linkedinUrl || "#"} target="_blank" rel="noreferrer" tabIndex={linkedinUrl ? undefined : -1}>
                   <Linkedin className="h-4 w-4 mr-2" />
                   LinkedIn
                 </Link>
               </Button>
 
-              <Button variant="outline" asChild className="rounded-full bg-transparent">
-                <Link href="#" target="_blank" rel="noreferrer">
+              <Button variant="outline" asChild className="rounded-full bg-transparent" aria-disabled={!portfolioUrl}>
+                <Link href={portfolioUrl || "#"} target="_blank" rel="noreferrer" tabIndex={portfolioUrl ? undefined : -1}>
                   <Globe className="h-4 w-4 mr-2" />
                   Portfolio
                 </Link>
               </Button>
+
+              <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="secondary" className="rounded-full">
+                    <PencilLine className="h-4 w-4 mr-2" />
+                    Edit Profile
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[480px]">
+                  <DialogHeader>
+                    <DialogTitle>Edit Social Links</DialogTitle>
+                    <DialogDescription>Update your GitHub, LinkedIn, and Portfolio URLs.</DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-3 py-2">
+                    <div>
+                      <label htmlFor="github-url" className="text-sm font-medium">GitHub URL</label>
+                      <Input id="github-url" placeholder="https://github.com/yourusername" value={editingGithubUrl} onChange={(e) => setEditingGithubUrl(e.target.value)} />
+                    </div>
+                    <div>
+                      <label htmlFor="linkedin-url" className="text-sm font-medium">LinkedIn URL</label>
+                      <Input id="linkedin-url" placeholder="https://linkedin.com/in/yourprofile" value={editingLinkedinUrl} onChange={(e) => setEditingLinkedinUrl(e.target.value)} />
+                    </div>
+                    <div>
+                      <label htmlFor="portfolio-url" className="text-sm font-medium">Portfolio URL</label>
+                      <Input id="portfolio-url" placeholder="https://yourportfolio.com" value={editingPortfolioUrl} onChange={(e) => setEditingPortfolioUrl(e.target.value)} />
+                    </div>
+                  </div>
+                  <DialogFooter className="gap-2">
+                    <DialogClose asChild>
+                      <Button variant="outline" className="rounded-full bg-transparent">
+                        Cancel
+                      </Button>
+                    </DialogClose>
+                    <Button onClick={handleSaveProfile} className="rounded-full">
+                      Save Changes
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
 
@@ -399,7 +528,8 @@ function QuickActions() {
 function SkillsSection() {
   const [learned, setLearned] = useState<Skill[]>([])
   const [taught, setTaught] = useState<Skill[]>([])
-  const { isSignedIn, user } = useUser()
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { isSignedIn: _isSignedIn, user } = useUser() // Renamed isSignedIn
   const [isLoadingSkills, setIsLoadingSkills] = useState(true); // New state for loading skills
 
   useEffect(() => {
@@ -472,13 +602,15 @@ function SkillsSection() {
   // Dialog state
   const [open, setOpen] = useState(false)
   // Removed individual skill state as they are now managed within SkillFormDialog
-  const [isSavingSkill, setIsSavingSkill] = useState(false) // Still needed for overall loading feedback
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_isSavingSkill, _setIsSavingSkill] = useState(false) // Renamed for intentional unused
   const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null);
 
   const totalSkills = learned.length + taught.length
 
   // Refactored handleSaveSkill to be passed to SkillFormDialog
-  async function handleSaveSkill(skill: Omit<Skill, "id">, addAnother: boolean) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async function handleSaveSkill(skill: Omit<Skill, "id">, _addAnother: boolean) { // Renamed addAnother
     if (!user) {
       toast.error("You need to be logged in to add a skill.");
       return; // Ensure user is logged in

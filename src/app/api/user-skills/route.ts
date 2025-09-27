@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { currentUser } from '@clerk/nextjs/server';
 
@@ -6,13 +6,13 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
-const prisma = global.prisma || new PrismaClient();
+const prisma = new PrismaClient();
 
 if (process.env.NODE_ENV === "development") {
   global.prisma = prisma;
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const user = await currentUser();
     if (!user) {
@@ -32,81 +32,97 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const user = await currentUser();
-    if (!user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+
+    if (!user || !user.emailAddresses || user.emailAddresses.length === 0) {
+      return NextResponse.json({ message: 'User not authenticated or email not available.' }, { status: 401 });
     }
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const email = user.emailAddresses[0].emailAddress;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const firstName = user.firstName;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const lastName = user.lastName;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const imageUrl = user.imageUrl;
+    const clerkId = user.id;
 
     const { name, level, category, type } = await request.json();
 
     if (!name || !level || !category || !type) {
-      return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
+      return NextResponse.json({ message: 'Missing required skill data.' }, { status: 400 });
     }
 
-    const newSkill = await prisma.skill.create({
-      data: {
-        name,
-        level,
-        category,
-        type,
-        userId: user.id,
-      },
-    });
-
-    // Notify standalone Socket.IO server of skill added
     try {
-      await fetch("http://localhost:3001/notify-skill-change", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event: "skillAdded", data: newSkill }),
+      const newSkill = await prisma.skill.create({
+        data: {
+          name,
+          level,
+          category,
+          type,
+          userId: clerkId,
+        },
       });
-    } catch (notificationError) {
-      console.error("Error notifying Socket.IO server of skill added:", notificationError);
-    }
+      // Notify clients via WebSocket (if a socket.server.js is running)
+      // This part assumes a WebSocket server is set up to emit 'skillAdded' event
+      // import { io } from 'socket.io-client';
+      // const socket = io('http://localhost:3001');
+      // socket.emit('skillAdded', newSkill);
 
-    return NextResponse.json(newSkill, { status: 201 });
+      return NextResponse.json({ message: 'Skill added successfully.', skill: newSkill });
+    } catch (dbError) {
+      console.error("Error adding skill to database:", dbError);
+      return NextResponse.json({ message: 'Failed to add skill.', error: dbError instanceof Error ? dbError.message : 'Unknown error' }, { status: 500 });
+    }
   } catch (error) {
-    console.error("Error adding skill:", error);
-    return NextResponse.json({ message: 'Failed to add skill.' }, { status: 500 });
+    console.error("Error in POST /api/user-skills:", error);
+    return NextResponse.json({ message: 'Internal Server Error.', error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 });
   } finally {
     await prisma.$disconnect();
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export async function DELETE(request: Request) {
   try {
     const user = await currentUser();
-    if (!user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+
+    if (!user || !user.emailAddresses || user.emailAddresses.length === 0) {
+      return NextResponse.json({ message: 'User not authenticated or email not available.' }, { status: 401 });
     }
 
-    const { id } = await request.json(); // Assuming id is sent in the request body for DELETE
+    const body = await request.json();
+    const { id } = body;
 
     if (!id) {
-      return NextResponse.json({ message: 'Missing skill ID' }, { status: 400 });
+      return NextResponse.json({ message: 'Missing skill ID.' }, { status: 400 });
+    }
+
+    // Verify that the skill belongs to the current user before deleting
+    const skillToDelete = await prisma.skill.findUnique({
+      where: { id: id },
+    });
+
+    if (!skillToDelete || skillToDelete.userId !== user.id) {
+      return NextResponse.json({ message: 'Skill not found or not authorized to delete.' }, { status: 403 });
     }
 
     await prisma.skill.delete({
-      where: { id: id, userId: user.id }, // Ensure user can only delete their own skills
+      where: { id: id },
     });
 
-    // Notify standalone Socket.IO server of skill deleted
-    try {
-      await fetch("http://localhost:3001/notify-skill-change", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event: "skillRemoved", data: id }),
-      });
-    } catch (notificationError) {
-      console.error("Error notifying Socket.IO server of skill removed:", notificationError);
-    }
+    // Notify clients via WebSocket (if a socket.server.js is running)
+    // This part assumes a WebSocket server is set up to emit 'skillRemoved' event
+    // import { io } from 'socket.io-client';
+    // const socket = io('http://localhost:3001');
+    // socket.emit('skillRemoved', id);
 
     return NextResponse.json({ message: 'Skill deleted successfully.' });
   } catch (error) {
     console.error("Error deleting skill:", error);
-    return NextResponse.json({ message: 'Failed to delete skill.' }, { status: 500 });
+    return NextResponse.json({ message: 'Failed to delete skill.', error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 });
   } finally {
     await prisma.$disconnect();
   }

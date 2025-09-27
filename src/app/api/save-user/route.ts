@@ -4,7 +4,7 @@ import { currentUser } from '@clerk/nextjs/server';
 
 const prisma = new PrismaClient();
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const user = await currentUser();
 
@@ -17,6 +17,9 @@ export async function POST() {
     const lastName = user.lastName;
     const imageUrl = user.imageUrl;
     const clerkId = user.id;
+
+    const body = await request.json(); // Parse the request body
+    const { githubUrl, linkedinUrl, portfolioUrl } = body; // Extract social links
 
     // Check if user already exists in the database
     let existingUser = await prisma.user.findUnique({
@@ -32,6 +35,9 @@ export async function POST() {
           firstName,
           lastName,
           imageUrl,
+          githubUrl,
+          linkedinUrl,
+          portfolioUrl,
           updatedAt: new Date(),
         },
       });
@@ -45,6 +51,9 @@ export async function POST() {
           firstName,
           lastName,
           imageUrl,
+          githubUrl,
+          linkedinUrl,
+          portfolioUrl,
         },
       });
       return NextResponse.json({ message: 'User data saved successfully.', user: newUser });
