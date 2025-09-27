@@ -29,6 +29,12 @@ export default function Navbar() {
           <Link href="/about" className="text-sm font-medium text-foreground/80 hover:text-foreground">
             About
           </Link>
+          <Link href="/learn" className="text-sm font-medium text-foreground/80 hover:text-foreground">
+            Learn
+          </Link>
+          <Link href="/dashboard" className="text-sm font-medium text-foreground/80 hover:text-foreground">
+            Dashboard
+          </Link>
         </div>
 
         {/* Auth: SignedIn -> UserButton, SignedOut -> SignIn button */}

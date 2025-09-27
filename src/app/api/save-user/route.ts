@@ -4,7 +4,7 @@ import { currentUser } from '@clerk/nextjs/server';
 
 const prisma = new PrismaClient();
 
-export async function POST(req: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     const user = await currentUser();
 
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ message: 'User data saved successfully.', user: newUser });
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error saving user data:", error);
     return NextResponse.json({ message: 'Failed to save user data.', error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 });
   } finally {
