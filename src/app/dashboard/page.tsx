@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-img-element */
 "use client"
 
 /**
@@ -26,7 +25,9 @@
 import * as React from "react"
 import Link from "next/link"
 import { useMemo, useState } from "react"
-import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from "@clerk/nextjs"
+import { useUser } from "@clerk/nextjs"
+import Image from "next/image";
+import Navbar from "@/components/Navbar";
 import {
   Github,
   Linkedin,
@@ -88,6 +89,7 @@ import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line } from "recharts";
 
 // Types
 type SkillLevel = "Beginner" | "Intermediate" | "Advanced" | "Expert"
@@ -239,71 +241,6 @@ const activityData = [
 ]
 
 // Navbar component (internal to this file)
-function TopNav() {
-  return (
-    <header className="sticky top-0 z-30 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-      <nav className="container mx-auto px-4">
-        <div className="flex h-14 items-center justify-between">
-          <div className="flex items-center gap-2">
-            <img src="/leaf-logo.jpg" alt="" className="h-7 w-7" />
-            <Link href="/" className="font-semibold tracking-tight text-pretty">
-              SkillCollab
-            </Link>
-            <Badge variant="secondary" className="ml-2 rounded-full">
-              <Leaf className="h-3.5 w-3.5 mr-1" />
-              Beta
-            </Badge>
-          </div>
-
-          <div className="hidden md:flex items-center gap-6 text-sm">
-            <NavLink href="/">Home</NavLink>
-            <NavLink href="/dashboard#skills">Skills</NavLink>
-            <NavLink href="/dashboard#projects">Projects</NavLink>
-            <NavLink href="/about">About</NavLink>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex">
-              <SearchBox />
-            </div>
-            <SignedOut>
-              <SignInButton mode="modal">
-                <Button variant="default" className="rounded-full">
-                  Sign in
-                </Button>
-              </SignInButton>
-            </SignedOut>
-            <SignedIn>
-              <UserButton
-                appearance={{
-                  elements: { userButtonBox: "rounded-full" },
-                }}
-              />
-            </SignedIn>
-          </div>
-        </div>
-      </nav>
-    </header>
-  )
-}
-
-function NavLink(props: { href: string; children: React.ReactNode }) {
-  return (
-    <Link href={props.href} className="text-muted-foreground hover:text-foreground transition-colors">
-      {props.children}
-    </Link>
-  )
-}
-
-function SearchBox() {
-  return (
-    <div className="relative">
-      <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-      <Input className="pl-9 w-56 rounded-full" placeholder="Search..." aria-label="Search" />
-    </div>
-  )
-}
-
 function ProfileHeader() {
   const { user } = useUser()
 
@@ -972,44 +909,23 @@ function StatsAchievementsSection() {
           <CardContent className="pt-0">
             <ChartContainer
               className="h-[200px]"
-              config={{
-                skills: { label: "Skills", color: "hsl(var(--chart-1))" },
-                projects: { label: "Projects", color: "hsl(var(--chart-2))" },
-              }}
             >
               {/* Using Recharts per shadcn/ui chart helper */}
               {/* We avoid bringing full chart code here; ChartTooltip handles consistent tooltip styles */}
               {/* The line/bar components rely on --color-skills and --color-projects */}
               {/* The ChartContainer provides context variables for theme colors */}
-              {/* eslint-disable-next-line @typescript-eslint/no-var-requires */}
-              {React.createElement(require("recharts").ResponsiveContainer, { width: "100%", height: "100%" }, [
-                React.createElement(
-                  require("recharts").ComposedChart,
-                  { key: "chart", data: activityData, margin: { top: 10, right: 10, left: 0, bottom: 0 } },
-                  [
-                    React.createElement(require("recharts").CartesianGrid, { key: "grid", strokeDasharray: "3 3" }),
-                    React.createElement(require("recharts").XAxis, { key: "x", dataKey: "week" }),
-                    React.createElement(require("recharts").YAxis, { key: "y" }),
-                    React.createElement(ChartTooltip as any, {
-                      key: "tt",
-                      content: React.createElement(ChartTooltipContent),
-                    }),
-                    React.createElement(require("recharts").Bar, {
-                      key: "bar",
-                      dataKey: "skills",
-                      fill: "var(--color-skills)",
-                      radius: [4, 4, 0, 0],
-                    }),
-                    React.createElement(require("recharts").Line, {
-                      key: "line",
-                      type: "monotone",
-                      dataKey: "projects",
-                      stroke: "var(--color-projects)",
-                      strokeWidth: 2,
-                    }),
-                  ],
-                ),
-              ])}
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={activityData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="week" />
+                  <YAxis />
+                  <ChartTooltip>
+                    <ChartTooltipContent />
+                  </ChartTooltip>
+                  <Bar dataKey="skills" fill="var(--color-skills)" radius={[4, 4, 0, 0]} />
+                  <Line type="monotone" dataKey="projects" stroke="var(--color-projects)" strokeWidth={2} />
+                </ComposedChart>
+              </ResponsiveContainer>
             </ChartContainer>
           </CardContent>
           <CardFooter className="pt-2">
@@ -1096,7 +1012,7 @@ function Footer() {
       <div className="container mx-auto px-4 py-6">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm">
           <div className="flex items-center gap-2">
-            <img src="/leaf-logo.jpg" alt="" className="h-6 w-6" />
+            <Image src="/leaf-logo.jpg" alt="SkillCollab logo" width={24} height={24} />
             <span className="text-muted-foreground">© {new Date().getFullYear()} SkillCollab</span>
           </div>
           <div className="flex items-center gap-4">
@@ -1123,7 +1039,7 @@ function Footer() {
 export default function DashboardPage() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <TopNav />
+      <Navbar />
       <main className="pb-10">
         <ProfileHeader />
         <QuickActions />
