@@ -8,6 +8,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ProjectMemberStatus {
+  APPLIED
+  ACCEPTED
+  REJECTED
+}
+
 model User {
   id                 String          @id @unique
   email              String          @unique
@@ -62,6 +68,21 @@ model ProjectMember {
   projectId String
   role      String?
   joinedAt  DateTime @default(now())
+
+  // Application / profile fields for joiners
+  fullName            String?
+  contactInfo         String?
+  portfolioUrl        String?
+  skills              String[]  @default([])
+  preferredRole       String?
+  availability        String?
+  motivation          String?
+  agreedToGuidelines  Boolean   @default(false)
+
+  // approval status
+  status    ProjectMemberStatus @default(APPLIED)
+  acceptedAt DateTime?
+
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

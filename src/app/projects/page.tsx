@@ -30,7 +30,7 @@ type Project = {
   durationWeeks: number | null
   status: "Open" | "Closed"
   requiredSkills: string[]
-  collaborators: { id: string; name: string; avatar?: string; role?: string }[]
+  collaborators: ({ id: string; name: string; avatar?: string; role?: string; application?: { fullName?: string | null; contactInfo?: string | null; portfolioUrl?: string | null; skills?: string[]; preferredRole?: string | null; availability?: string | null; motivation?: string | null; agreedToGuidelines?: boolean } })[]
   creator: { id: string; name: string; avatar?: string; role?: string }
   bannerUrl?: string | null
   attachments?: string[]
@@ -53,6 +53,21 @@ export default function ProjectsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [confirmOpen, setConfirmOpen] = useState<boolean>(false)
+
+  // Join application modal state
+  const [joinProject, setJoinProject] = useState<Project | null>(null)
+  const [joinOpen, setJoinOpen] = useState<boolean>(false)
+  const [joining, setJoining] = useState<boolean>(false)
+  const [joinForm, setJoinForm] = useState({
+    fullName: '',
+    contactInfo: '',
+    portfolioUrl: '',
+    skills: '',
+    preferredRole: 'Frontend',
+    availability: '',
+    motivation: '',
+    agreed: false,
+  })
 
   // Fetch projects from API with current filters
   async function fetchProjects() {
@@ -157,16 +172,136 @@ export default function ProjectsPage() {
   }
 
   function applyToJoin(p: Project) {
-    // naive local join: add current user placeholder to collaborators and to myProjects
-    const already = myProjects.find((m) => m.id === p.id)
-    if (already) return
-    const joined = { ...p, collaborators: [...p.collaborators, { id: "me", name: "You" }] }
-    setMyProjects((s) => [joined, ...s])
+    // Open the join application modal for this project
+    setJoinProject(p)
+    // prefill form with user info when available
+    if (user) {
+      const u: any = user
+      setJoinForm((f) => ({
+        ...f,
+        fullName: `${(u.firstName || '')} ${(u.lastName || '')}`.trim() || (u.fullName || ''),
+        contactInfo: (u.primaryEmailAddress?.emailAddress) || (u.email || '') || (u.primaryEmail || '') || '',
+        portfolioUrl: (u.publicMetadata?.portfolioUrl) || (u.privateMetadata?.portfolioUrl) || (u?.portfolioUrl) || '',
+      }))
+    }
+    setJoinOpen(true)
     setIsOpen(false)
   }
 
   function joinFromCard(p: Project) {
     applyToJoin(p)
+  }
+
+  async function submitJoinApplication() {
+    if (!joinProject) return
+    if (!joinForm.agreed) {
+      toast.error('You must agree to the project guidelines to apply.')
+      return
+    }
+    try {
+      setJoining(true)
+      const payload = {
+        projectId: joinProject.id,
+        fullName: joinForm.fullName,
+        contactInfo: joinForm.contactInfo,
+        portfolioUrl: joinForm.portfolioUrl,
+        skills: joinForm.skills,
+        preferredRole: joinForm.preferredRole,
+        availability: joinForm.availability,
+        motivation: joinForm.motivation,
+        agreedToGuidelines: joinForm.agreed,
+      }
+      const res = await fetch('/api/projects/join', { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json' }, credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(json?.error || 'Failed to submit application')
+        return
+      }
+      toast.success('Application submitted')
+      // refresh projects so creator sees new member and this user sees joined projects
+      fetchProjects()
+      // optionally add to myProjects locally
+      setMyProjects((s) => [ { ...joinProject, collaborators: [...joinProject.collaborators, { id: user?.id || 'me', name: joinForm.fullName || (user?.fullName || 'You') }] }, ...s ])
+      setJoinOpen(false)
+      setJoinProject(null)
+    } catch (err) {
+      console.error('Join failed', err)
+      toast.error('Failed to submit application')
+    } finally {
+      setJoining(false)
+    }
+  }
+
+  // Manage project modal (for creators to view applicants)
+  const [manageProject, setManageProject] = useState<Project | null>(null)
+  const [manageOpen, setManageOpen] = useState<boolean>(false)
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
+
+  // Applicant profile & approval flow
+  const [selectedApplicant, setSelectedApplicant] = useState<any | null>(null)
+  const [applicantOpen, setApplicantOpen] = useState<boolean>(false)
+  const [processingApplicantId, setProcessingApplicantId] = useState<string | null>(null)
+
+  function openApplicantProfile(c: any) {
+    setSelectedApplicant(c)
+    setApplicantOpen(true)
+  }
+
+  async function respondToApplicant(memberId: string, action: 'accept' | 'reject') {
+    if (!manageProject) return
+    try {
+      setProcessingApplicantId(memberId)
+      const res = await fetch(`/api/projects/member?projectId=${encodeURIComponent(manageProject.id)}&userId=${encodeURIComponent(memberId)}&action=${action}`, { method: 'PATCH', credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(json?.error || 'Failed to update application')
+        return
+      }
+      toast.success(action === 'accept' ? 'Applicant accepted' : 'Applicant rejected')
+      // refresh projects and update local manageProject
+      fetchProjects()
+      setManageProject((s) => {
+        if (!s) return s
+        return {
+          ...s,
+          collaborators: s.collaborators.map((c) => (c.id === memberId ? { ...c, application: { ...(c.application || {}), status: action === 'accept' ? 'ACCEPTED' : 'REJECTED' } } : c)),
+        }
+      })
+      setApplicantOpen(false)
+      setSelectedApplicant(null)
+    } catch (err) {
+      console.error('Respond to applicant failed', err)
+      toast.error('Failed to update application')
+    } finally {
+      setProcessingApplicantId(null)
+    }
+  }
+
+  function openManageProject(p: Project) {
+    setManageProject(p)
+    setManageOpen(true)
+  }
+
+  async function removeMember(projectId: string, memberId: string) {
+    try {
+      setRemovingMemberId(memberId)
+      const res = await fetch('/api/projects/member', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId, userId: memberId }), credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(json?.error || 'Failed to remove member')
+        return
+      }
+      toast.success('Member removed')
+      // refresh projects
+      fetchProjects()
+      // update local manageProject state
+      setManageProject((s) => s ? { ...s, collaborators: s.collaborators.filter((c) => c.id !== memberId) } : s)
+    } catch (err) {
+      console.error('Remove member failed', err)
+      toast.error('Failed to remove member')
+    } finally {
+      setRemovingMemberId(null)
+    }
   }
 
   return (
@@ -358,75 +493,98 @@ export default function ProjectsPage() {
           </div>
 
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filtered.map((p) => (
-              <article key={p.id} className="rounded-lg border-2 border-black bg-white overflow-hidden flex flex-col min-h-[18rem]">
-                {/* banner area */}
-                {p.bannerUrl ? (
-                  <div className="w-full">
-                    <img src={p.bannerUrl} alt={p.title} className="w-full h-48 object-cover" />
-                  </div>
-                ) : (
-                  <div className="w-full h-24 bg-gray-50" />
-                )}
-                <div className="flex-1 p-4 flex flex-col">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 pr-3">
-                      <h3 className="text-sm font-semibold text-gray-900 truncate">{p.title}</h3>
-                      <p className="mt-2 text-xs text-gray-600 line-clamp-2">{p.shortDescription}</p>
-                      <div className="flex gap-2 mt-3 flex-wrap">
-                        {p.requiredSkills && p.requiredSkills.length > 0 ? (
-                          p.requiredSkills.slice(0, 4).map((s: string) => (
-                            <Badge key={s} className="bg-green-50 text-green-700 border-green-100 text-xs px-2 py-0.5 rounded">{s}</Badge>
-                          ))
-                        ) : (
-                          <div className="text-xs text-gray-500">No skills specified</div>
-                        )}
+            {loadingProjects ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-8 sm:py-12 w-full">
+                <svg aria-hidden="true" className="w-8 h-8 text-green-600 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                </svg>
+                <div className="mt-3 text-sm text-gray-600">Loading projects…</div>
+
+                <div className="mt-6 w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="rounded-lg border-2 border-black bg-white overflow-hidden min-h-[18rem]">
+                      <div className="w-full h-48 bg-gray-100" />
+                      <div className="p-4">
+                        <div className="h-3 bg-gray-200 rounded w-3/4 mb-3" />
+                        <div className="h-3 bg-gray-200 rounded w-5/6 mb-2" />
+                        <div className="h-3 bg-gray-200 rounded w-1/2 mt-4" />
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                      {p.creator?.avatar ? (
-                        <Avatar className="w-8 h-8">
-                          <AvatarImage src={p.creator.avatar} alt={p.creator.name} />
-                          <AvatarFallback>{p.creator.name?.[0]}</AvatarFallback>
-                        </Avatar>
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm text-gray-600">{p.creator?.name?.[0] ?? 'U'}</div>
-                      )}
-                      <div className="text-xs text-gray-600">{p.durationWeeks} wk • {p.difficulty}</div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              filtered.map((p) => (
+                <article key={p.id} className="rounded-lg border-2 border-black bg-white overflow-hidden flex flex-col min-h-[18rem]">
+                  {/* banner area */}
+                  {p.bannerUrl ? (
+                    <div className="w-full">
+                      <img src={p.bannerUrl} alt={p.title} className="w-full h-48 object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-full h-24 bg-gray-50" />
+                  )}
+                  <div className="flex-1 p-4 flex flex-col">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 pr-3">
+                        <h3 className="text-sm font-semibold text-gray-900 truncate">{p.title}</h3>
+                        <p className="mt-2 text-xs text-gray-600 line-clamp-2">{p.shortDescription}</p>
+                        <div className="flex gap-2 mt-3 flex-wrap">
+                          {p.requiredSkills && p.requiredSkills.length > 0 ? (
+                            p.requiredSkills.slice(0, 4).map((s: string) => (
+                              <Badge key={s} className="bg-green-50 text-green-700 border-green-100 text-xs px-2 py-0.5 rounded">{s}</Badge>
+                            ))
+                          ) : (
+                            <div className="text-xs text-gray-500">No skills specified</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        {p.creator?.avatar ? (
+                          <Avatar className="w-8 h-8">
+                            <AvatarImage src={p.creator.avatar} alt={p.creator.name} />
+                            <AvatarFallback>{p.creator.name?.[0]}</AvatarFallback>
+                          </Avatar>
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm text-gray-600">{p.creator?.name?.[0] ?? 'U'}</div>
+                        )}
+                        <div className="text-xs text-gray-600">{p.durationWeeks} wk • {p.difficulty}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-3 text-xs text-gray-600">
+                      <div className="flex items-center gap-1"><Calendar className="w-4 h-4 text-gray-500" />{p.durationWeeks} wk</div>
+                      <div className="px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-xs">{p.difficulty}</div>
+                      <div className="flex items-center gap-1"><Users className="w-4 h-4 text-gray-500" />{p.collaborators.length}</div>
                     </div>
                   </div>
 
-                  <div className="mt-3 flex items-center gap-3 text-xs text-gray-600">
-                    <div className="flex items-center gap-1"><Calendar className="w-4 h-4 text-gray-500" />{p.durationWeeks} wk</div>
-                    <div className="px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-xs">{p.difficulty}</div>
-                    <div className="flex items-center gap-1"><Users className="w-4 h-4 text-gray-500" />{p.collaborators.length}</div>
-                  </div>
-                </div>
-
-                <div className="mt-3 w-full flex items-center gap-3 p-4 pt-0">
-                  <Button className="flex-1 bg-green-600 text-white py-2 text-sm rounded-md" onClick={() => joinFromCard(p)}>
-                    Join Project
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => openDetails(p)} aria-label={`Inspect ${p.title}`}>
-                    <Eye className="w-4 h-4 text-green-600" />
-                  </Button>
-
-                  {/* Delete control shown only to creator */}
-                  {user && String(user.id) === String(p.creator?.id) && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => promptDeleteProject(p)}
-                      aria-label={`Delete ${p.title}`}
-                      disabled={deletingId === p.id}
-                      className="border border-gray-800 text-gray-800 bg-white rounded-md p-2 hover:bg-black hover:text-white transition-colors"
-                    >
-                      <Trash className="w-4 h-4" />
+                  <div className="mt-3 w-full flex items-center gap-3 p-4 pt-0">
+                    <Button className="flex-1 bg-green-600 text-white py-2 text-sm rounded-md" onClick={() => joinFromCard(p)}>
+                      Join Project
                     </Button>
-                  )}
-                </div>
-              </article>
-            ))}
+                    <Button variant="ghost" size="icon" onClick={() => openDetails(p)} aria-label={`Inspect ${p.title}`}>
+                      <Eye className="w-4 h-4 text-green-600" />
+                    </Button>
+
+                    {/* Delete control shown only to creator */}
+                    {user && String(user.id) === String(p.creator?.id) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => promptDeleteProject(p)}
+                        aria-label={`Delete ${p.title}`}
+                        disabled={deletingId === p.id}
+                        className="border border-gray-800 text-gray-800 bg-white rounded-md p-2 hover:bg-black hover:text-white transition-colors"
+                      >
+                        <Trash className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </article>
+              ))
+            )}
           </div>
         </section>
 
@@ -434,9 +592,11 @@ export default function ProjectsPage() {
         <section className="mb-10">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">My Projects</h2>
-            <Link href="/projects/create">
-              <Button variant="outline" className="border-green-600 text-green-700">Start Your Own Project</Button>
-            </Link>
+            <div className="flex items-center gap-3 text-sm text-gray-600">
+              <Link href="/projects/create">
+                <Button variant="outline" className="border-green-600 text-green-700">Start Your Own Project</Button>
+              </Link>
+            </div>
           </div>
 
           <div className="mt-4">
@@ -451,7 +611,7 @@ export default function ProjectsPage() {
                       <div className="text-xs text-gray-600">Role: Collaborator • Progress: 25%</div>
                     </div>
                     <div>
-                      <Button variant="secondary" className="bg-green-600 text-white">Continue Collaboration</Button>
+                      <Button variant="secondary" className="bg-green-600 text-white transform transition-transform duration-150 ease-out hover:-translate-y-1 hover:scale-105 active:scale-100 hover:bg-green-600 hover:text-white">Continue Collaboration</Button>
                     </div>
                   </div>
                 ))}
@@ -480,9 +640,7 @@ export default function ProjectsPage() {
                         <div className="text-xs text-gray-600">{op.requiredSkills?.slice(0,3).join(', ')}{op.requiredSkills && op.requiredSkills.length > 3 ? '…' : ''}</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Link href={`/projects/${op.id}`}>
-                          <Button variant="ghost" className="text-sm border border-gray-200 px-3 py-1 rounded-md">View</Button>
-                        </Link>
+                        <Button variant="ghost" className="text-sm border border-gray-200 px-3 py-1 rounded-md" onClick={() => openManageProject(op)}>View</Button>
                         <Button
                           onClick={() => promptDeleteProject(op)}
                           disabled={deletingId === op.id}
@@ -622,6 +780,197 @@ export default function ProjectsPage() {
               {deletingId === projectToDelete?.id ? 'Deleting…' : 'Delete project'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Join application modal */}
+      <Dialog open={joinOpen} onOpenChange={(o) => setJoinOpen(o)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Apply to join</DialogTitle>
+            <DialogDescription>{joinProject?.title}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-600">Full name</label>
+              <input value={joinForm.fullName} onChange={(e) => setJoinForm((s) => ({ ...s, fullName: e.target.value }))} className="w-full mt-1 p-2 border border-gray-200 rounded-md" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Email / Contact</label>
+              <input value={joinForm.contactInfo} onChange={(e) => setJoinForm((s) => ({ ...s, contactInfo: e.target.value }))} className="w-full mt-1 p-2 border border-gray-200 rounded-md" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Portfolio / GitHub / LinkedIn</label>
+              <input value={joinForm.portfolioUrl} onChange={(e) => setJoinForm((s) => ({ ...s, portfolioUrl: e.target.value }))} className="w-full mt-1 p-2 border border-gray-200 rounded-md" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Skills you bring (comma separated)</label>
+              <input value={joinForm.skills} onChange={(e) => setJoinForm((s) => ({ ...s, skills: e.target.value }))} className="w-full mt-1 p-2 border border-gray-200 rounded-md" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-gray-600">Preferred role</label>
+                <select value={joinForm.preferredRole} onChange={(e) => setJoinForm((s) => ({ ...s, preferredRole: e.target.value }))} className="w-full mt-1 p-2 border border-gray-200 rounded-md">
+                  <option>Frontend</option>
+                  <option>Backend</option>
+                  <option>Designer</option>
+                  <option>Researcher</option>
+                  <option>Fullstack</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600">Availability</label>
+                <input value={joinForm.availability} onChange={(e) => setJoinForm((s) => ({ ...s, availability: e.target.value }))} placeholder="e.g., 8 hrs/week" className="w-full mt-1 p-2 border border-gray-200 rounded-md" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Motivation / Why you want to join</label>
+              <textarea value={joinForm.motivation} onChange={(e) => setJoinForm((s) => ({ ...s, motivation: e.target.value }))} className="w-full mt-1 p-2 border border-gray-200 rounded-md" rows={4} />
+            </div>
+            <div className="flex items-center gap-2">
+              <input id="agree" type="checkbox" checked={joinForm.agreed} onChange={(e) => setJoinForm((s) => ({ ...s, agreed: e.target.checked }))} />
+              <label htmlFor="agree" className="text-sm text-gray-700">I agree to the project guidelines</label>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button onClick={() => submitJoinApplication()} disabled={joining} className="bg-green-600 text-white">{joining ? 'Applying…' : 'Apply'}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage project modal - visible to project creators */}
+      <Dialog open={manageOpen} onOpenChange={(o) => setManageOpen(o)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Manage project</DialogTitle>
+            <DialogDescription>{manageProject?.title}</DialogDescription>
+          </DialogHeader>
+
+          {manageProject ? (
+            <div className="grid gap-4">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Applicants / Members</h4>
+                <div className="mt-3 space-y-3">
+                  {manageProject.collaborators.length === 0 ? (
+                    <div className="text-sm text-gray-600">No applicants yet.</div>
+                  ) : (
+                    manageProject.collaborators.map((c) => (
+                      <div key={c.id} className="flex items-start gap-3 justify-between border border-gray-100 rounded-md p-3">
+                         <div className="flex items-start gap-3">
+                          {c.avatar ? (
+                            <Avatar className="w-10 h-10">
+                              <AvatarImage src={c.avatar} alt={c.name} />
+                              <AvatarFallback>{c.name?.[0]}</AvatarFallback>
+                            </Avatar>
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-sm text-gray-600">{c.name?.[0] ?? 'U'}</div>
+                          )}
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{c.application?.fullName || c.name}</div>
+                            <div className="text-xs text-gray-600">{c.application?.preferredRole || c.role || 'Contributor'} • {c.application?.availability || ''}</div>
+                            <div className="mt-1 text-xs text-gray-700">{c.application?.motivation ? (c.application.motivation.length > 200 ? c.application.motivation.slice(0,200) + '…' : c.application.motivation) : ''}</div>
+                            <div className="mt-2 flex items-center gap-2 text-xs">
+                              {c.application?.contactInfo && (<a href={`mailto:${c.application.contactInfo}`} className="text-green-700 underline">Contact</a>)}
+                              {c.application?.portfolioUrl && (<a href={c.application.portfolioUrl} target="_blank" rel="noreferrer" className="text-green-700 underline">Portfolio</a>)}
+                              {c.application?.skills && c.application.skills.length > 0 && (
+                                <div className="flex gap-1 flex-wrap">
+                                  {c.application.skills.slice(0,4).map((s) => (<Badge key={s} className="bg-green-50 text-green-700 border-green-100 text-xs px-2 py-0.5 rounded">{s}</Badge>))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="text-xs text-gray-600">Joined at: {/* show joinedAt if needed */}</div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={`mailto:${c.application?.contactInfo || ''}`}>Message</a>
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openApplicantProfile(c)}>View Profile</Button>
+                            <Button className="text-sm border border-red-600 text-red-600 bg-white px-3 py-1 rounded-md" onClick={() => removeMember(manageProject.id, c.id)} disabled={removingMemberId === c.id}>
+                              {removingMemberId === c.id ? 'Removing…' : 'Remove'}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                     ))
+                   )}
+                 </div>
+               </div>
+
+               <div className="flex justify-end">
+                 <DialogClose asChild>
+                   <Button variant="outline">Close</Button>
+                 </DialogClose>
+               </div>
+             </div>
+           ) : (
+             <div className="py-6 text-center text-sm text-gray-600">Loading…</div>
+           )}
+         </DialogContent>
+       </Dialog>
+
+      {/* Applicant profile modal - shows full application and accept/reject actions for owner */}
+      <Dialog open={applicantOpen} onOpenChange={(o) => setApplicantOpen(o)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Applicant profile</DialogTitle>
+            <DialogDescription>{selectedApplicant?.application?.fullName || selectedApplicant?.name}</DialogDescription>
+          </DialogHeader>
+          {selectedApplicant ? (
+            <div className="grid gap-3">
+              <div className="flex items-center gap-3">
+                {selectedApplicant.avatar ? (
+                  <Avatar className="w-14 h-14">
+                    <AvatarImage src={selectedApplicant.avatar} alt={selectedApplicant.name} />
+                    <AvatarFallback>{selectedApplicant.name?.[0]}</AvatarFallback>
+                  </Avatar>
+                ) : (
+                  <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center text-sm text-gray-600">{selectedApplicant.name?.[0] ?? 'U'}</div>
+                )}
+                <div>
+                  <div className="text-sm font-medium text-gray-900">{selectedApplicant.application?.fullName || selectedApplicant.name}</div>
+                  <div className="text-xs text-gray-600">{selectedApplicant.application?.preferredRole || selectedApplicant.role || ''}</div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Contact</h4>
+                <div className="mt-1 text-sm text-gray-700">{selectedApplicant.application?.contactInfo || 'Not provided'}</div>
+                {selectedApplicant.application?.portfolioUrl && (<a href={selectedApplicant.application.portfolioUrl} target="_blank" rel="noreferrer" className="text-green-700 underline text-sm mt-1 block">View portfolio</a>)}
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Skills</h4>
+                <div className="mt-2 flex gap-2 flex-wrap">
+                  {(selectedApplicant.application?.skills || []).length === 0 ? (
+                    <div className="text-sm text-gray-600">Not specified</div>
+                  ) : (
+                    (selectedApplicant.application?.skills || []).map((s: string) => <Badge key={s} className="bg-green-50 text-green-700 border-green-100 text-xs px-2 py-0.5 rounded">{s}</Badge>)
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Motivation</h4>
+                <div className="mt-1 text-sm text-gray-700">{selectedApplicant.application?.motivation || '—'}</div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <DialogClose asChild>
+                  <Button variant="outline">Close</Button>
+                </DialogClose>
+                <Button className="bg-green-600 text-white" onClick={() => respondToApplicant(selectedApplicant.id, 'accept')} disabled={processingApplicantId === selectedApplicant.id}>{processingApplicantId === selectedApplicant.id ? 'Processing…' : 'Accept'}</Button>
+                <Button className="text-sm border border-gray-300 text-gray-800 bg-white px-3 py-1 rounded-md" onClick={() => respondToApplicant(selectedApplicant.id, 'reject')} disabled={processingApplicantId === selectedApplicant.id}>{processingApplicantId === selectedApplicant.id ? 'Processing…' : 'Reject'}</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-6 text-center text-sm text-gray-600">Loading…</div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -134,9 +134,23 @@ export async function GET(req: Request) {
         collaborators: Array.isArray(p.members)
           ? p.members.map((m: any) => ({
               id: m.user?.id || m.userId,
-              name: m.user ? ([m.user.firstName, m.user.lastName].filter(Boolean).join(' ') || m.user.email) : 'Member',
+              name: m.fullName || (m.user ? ([m.user.firstName, m.user.lastName].filter(Boolean).join(' ') || m.user.email) : 'Member'),
               avatar: m.user?.imageUrl || undefined,
-              role: m.role || undefined,
+              role: m.role || m.preferredRole || undefined,
+              // application/profile fields (if created via ProjectMember)
+              application: {
+                fullName: m.fullName || null,
+                contactInfo: m.contactInfo || null,
+                portfolioUrl: m.portfolioUrl || m.user?.portfolioUrl || null,
+                skills: Array.isArray(m.skills) ? m.skills : typeof m.skills === 'string' ? m.skills.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+                preferredRole: m.preferredRole || null,
+                availability: m.availability || null,
+                motivation: m.motivation || null,
+                agreedToGuidelines: Boolean(m.agreedToGuidelines),
+                // approval workflow
+                status: m.status || null,
+                acceptedAt: m.acceptedAt || null,
+              }
             }))
           : [],
       }))
