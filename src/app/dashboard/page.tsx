@@ -95,13 +95,17 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line } from "recharts";
 import { toast } from "react-hot-toast";
 
+// Import the new SkillFormDialog component
+import { SkillFormDialog } from "@/components/SkillFormDialog";
+
 // Types
 type SkillLevel = "Beginner" | "Intermediate" | "Advanced" | "Expert"
+type SkillCategory = "Frontend" | "Backend" | "DevOps" | "Design" | "Data" | "Other"
 type Skill = {
   id: string
   name: string
   level: SkillLevel
-  category: "Frontend" | "Backend" | "DevOps" | "Design" | "Data" | "Other"
+  category: SkillCategory
   type: "learned" | "taught"
 }
 
@@ -396,10 +400,21 @@ function SkillsSection() {
   const [learned, setLearned] = useState<Skill[]>([])
   const [taught, setTaught] = useState<Skill[]>([])
   const { isSignedIn, user } = useUser()
+  const [isLoadingSkills, setIsLoadingSkills] = useState(true); // New state for loading skills
 
   useEffect(() => {
     if (user) {
-      fetchSkills();
+      // Load from local storage first
+      const storedLearnedSkills = localStorage.getItem('learnedSkills');
+      const storedTaughtSkills = localStorage.getItem('taughtSkills');
+
+      if (storedLearnedSkills) {
+        setLearned(JSON.parse(storedLearnedSkills));
+      }
+      if (storedTaughtSkills) {
+        setTaught(JSON.parse(storedTaughtSkills));
+      }
+      fetchSkills(); // Then fetch fresh data
     }
   }, [user]);
 
@@ -437,6 +452,7 @@ function SkillsSection() {
 
   const fetchSkills = async () => {
     try {
+      setIsLoadingSkills(true); // Set loading to true
       const response = await fetch("/api/user-skills");
       if (!response.ok) {
         throw new Error(`Error: ${response.status}`);
@@ -444,66 +460,86 @@ function SkillsSection() {
       const data: Skill[] = await response.json();
       setLearned(data.filter(s => s.type === "learned"));
       setTaught(data.filter(s => s.type === "taught"));
+      localStorage.setItem('learnedSkills', JSON.stringify(data.filter(s => s.type === "learned")));
+      localStorage.setItem('taughtSkills', JSON.stringify(data.filter(s => s.type === "taught")));
     } catch (error) {
       console.error("Failed to fetch skills:", error);
+    } finally {
+      setIsLoadingSkills(false); // Set loading to false regardless of success or failure
     }
   };
 
   // Dialog state
   const [open, setOpen] = useState(false)
-  const [newSkillName, setNewSkillName] = useState("")
-  const [newSkillLevel, setNewSkillLevel] = useState<SkillLevel>("Beginner")
-  const [newSkillCategory, setNewSkillCategory] = useState<Skill["category"]>("Frontend")
-  const [newSkillType, setNewSkillType] = useState<Skill["type"]>("learned")
-  const [isSavingSkill, setIsSavingSkill] = useState(false)
+  // Removed individual skill state as they are now managed within SkillFormDialog
+  const [isSavingSkill, setIsSavingSkill] = useState(false) // Still needed for overall loading feedback
   const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [skillToEdit, setSkillToEdit] = useState<Skill | null>(null)
 
   const totalSkills = learned.length + taught.length
 
-  async function handleSaveSkill() {
+  // Refactored handleSaveSkill to be passed to SkillFormDialog
+  async function handleSaveSkill(skill: Omit<Skill, "id">, addAnother: boolean) {
     if (!user) {
       toast.error("You need to be logged in to add a skill.");
       return; // Ensure user is logged in
     }
-    const trimmed = newSkillName.trim()
-    if (!trimmed) {
-      toast.error("Skill name cannot be empty.");
-      return;
+
+    const tempId = uid(); // Temporary ID for optimistic update
+    const newSkillWithTempId: Skill = { ...skill, id: tempId };
+
+    // Optimistically update the UI for the new skill
+    if (newSkillWithTempId.type === "learned") {
+      setLearned((prev) => [newSkillWithTempId, ...prev]);
+    } else {
+      setTaught((prev) => [newSkillWithTempId, ...prev]);
     }
 
     try {
-      setIsSavingSkill(true)
       const response = await fetch("/api/user-skills", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: trimmed,
-          level: newSkillLevel,
-          category: newSkillCategory,
-          type: newSkillType,
-        }),
+        body: JSON.stringify(skill),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(`Error: ${errorData.message || response.status}`);
+        throw new Error(errorData.message || `Failed to add skill: ${skill.name}`);
       }
-
-      toast.success("Skill added successfully!")
-      setNewSkillName("")
-      setNewSkillLevel("Beginner")
-      setNewSkillCategory("Frontend")
-      setNewSkillType("learned")
-      setOpen(false)
-      // await fetchSkills(); // Removed direct fetch, relying on WebSocket
+      const savedSkill: Skill = await response.json();
+      // Update UI with actual saved skill ID and update local storage
+      if (savedSkill.type === "learned") {
+        setLearned((prev) => {
+          const updatedLearned = prev.map(s => s.id === tempId ? savedSkill : s);
+          localStorage.setItem('learnedSkills', JSON.stringify(updatedLearned));
+          return updatedLearned;
+        });
+      } else {
+        setTaught((prev) => {
+          const updatedTaught = prev.map(s => s.id === tempId ? savedSkill : s);
+          localStorage.setItem('taughtSkills', JSON.stringify(updatedTaught));
+          return updatedTaught;
+        });
+      }
+      toast.success(`Skill "${skill.name}" added successfully!`);
     } catch (error) {
-      console.error("Failed to add skill:", error);
-      toast.error(`Failed to add skill: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsSavingSkill(false)
+      console.error(`Failed to add skill ${skill.name}:`, error);
+      toast.error(`Failed to add skill "${skill.name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Revert optimistic update for this specific failed skill and update local storage
+      if (newSkillWithTempId.type === "learned") {
+        setLearned((prev) => {
+          const revertedLearned = prev.filter(s => s.id !== tempId);
+          localStorage.setItem('learnedSkills', JSON.stringify(revertedLearned));
+          return revertedLearned;
+        });
+      } else {
+        setTaught((prev) => {
+          const revertedTaught = prev.filter(s => s.id !== tempId);
+          localStorage.setItem('taughtSkills', JSON.stringify(revertedTaught));
+          return revertedTaught;
+        });
+      }
     }
+    // setIsSavingSkill(false); // This is managed within SkillFormDialog now
   }
 
   async function removeSkill(id: string, type: Skill["type"]) {
@@ -511,8 +547,28 @@ function SkillsSection() {
       toast.error("You need to be logged in to remove a skill.");
       return;
     }
+    let skillToRemove: Skill | undefined; // Declare skillToRemove here
     try {
       setDeletingSkillId(id);
+
+      // Optimistically remove the skill from the UI
+      setLearned((prev) => {
+        const foundSkill = prev.find(s => s.id === id);
+        if (foundSkill) {
+          skillToRemove = foundSkill;
+        }
+        return prev.filter((skill) => skill.id !== id);
+      });
+      if (!skillToRemove) {
+        setTaught((prev) => {
+          const foundSkill = prev.find(s => s.id === id);
+          if (foundSkill) {
+            skillToRemove = foundSkill;
+          }
+          return prev.filter((skill) => skill.id !== id);
+        });
+      }
+
       const response = await fetch("/api/user-skills", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -520,17 +576,35 @@ function SkillsSection() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`Error: ${errorData.message || response.status}`);
+        throw new Error("Failed to remove skill from database.");
       }
 
-      if (type === "learned") setLearned((s) => s.filter(skill => skill.id !== id));
-      else setTaught((s) => s.filter(skill => skill.id !== id));
       toast.success("Skill removed successfully!");
-      // No direct fetch needed, WebSocket will update
+      // Update local storage after successful removal
+      if (type === "learned") {
+        setLearned((prev) => {
+          const updatedLearned = prev.filter((skill) => skill.id !== id);
+          localStorage.setItem('learnedSkills', JSON.stringify(updatedLearned));
+          return updatedLearned;
+        });
+      } else {
+        setTaught((prev) => {
+          const updatedTaught = prev.filter((skill) => skill.id !== id);
+          localStorage.setItem('taughtSkills', JSON.stringify(updatedTaught));
+          return updatedTaught;
+        });
+      }
     } catch (error) {
       console.error("Failed to remove skill:", error);
       toast.error(`Failed to remove skill: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Revert optimistic update on error
+      if (skillToRemove) {
+        if (skillToRemove.type === "learned") {
+          setLearned((prev) => [...prev, skillToRemove!]);
+        } else {
+          setTaught((prev) => [...prev, skillToRemove!]);
+        }
+      }
     } finally {
       setDeletingSkillId(null);
     }
@@ -562,80 +636,7 @@ function SkillsSection() {
               Add Skill
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[480px]">
-            <DialogHeader>
-              <DialogTitle>Add a new skill</DialogTitle>
-              <DialogDescription>Add a learned or taught skill with level and category.</DialogDescription>
-            </DialogHeader>
-
-            <div className="grid gap-3 py-2">
-              <div>
-                <label className="text-sm font-medium">Name</label>
-                <Input
-                  placeholder="e.g., React, Figma, Docker"
-                  value={newSkillName}
-                  onChange={(e) => setNewSkillName(e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Level</label>
-                  <Select value={newSkillLevel} onValueChange={(v: SkillLevel) => setNewSkillLevel(v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Level" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Beginner">Beginner</SelectItem>
-                      <SelectItem value="Intermediate">Intermediate</SelectItem>
-                      <SelectItem value="Advanced">Advanced</SelectItem>
-                      <SelectItem value="Expert">Expert</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Category</label>
-                  <Select value={newSkillCategory} onValueChange={(v: Skill["category"]) => setNewSkillCategory(v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Frontend">Frontend</SelectItem>
-                      <SelectItem value="Backend">Backend</SelectItem>
-                      <SelectItem value="DevOps">DevOps</SelectItem>
-                      <SelectItem value="Design">Design</SelectItem>
-                      <SelectItem value="Data">Data</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Type</label>
-                  <Select value={newSkillType} onValueChange={(v: Skill["type"]) => setNewSkillType(v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="learned">Learned</SelectItem>
-                      <SelectItem value="taught">Taught</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter className="gap-2">
-              <DialogClose asChild>
-                <Button variant="outline" className="rounded-full bg-transparent">
-                  Cancel
-                </Button>
-              </DialogClose>
-              <Button onClick={handleSaveSkill} disabled={isSavingSkill}>
-                {isSavingSkill && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save
-              </Button>
-            </DialogFooter>
-          </DialogContent>
+          <SkillFormDialog open={open} onOpenChange={setOpen} onSaveSkill={handleSaveSkill} />
         </Dialog>
       </div>
 
@@ -650,16 +651,23 @@ function SkillsSection() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="flex flex-wrap gap-2">
-              {learned.map((s) => (
-                <Badge key={s.id} variant="outline" className="px-3 py-1 rounded-full">
-                  <span className="mr-2">{s.name}</span>
-                  <span className={cn("text-xs px-2 py-0.5 rounded-full", levelColor(s.level))}>{s.level}</span>
-                  <Button variant="ghost" size="icon" className="ml-1 h-4 w-4 rounded-full" onClick={() => removeSkill(s.id, s.type)} disabled={deletingSkillId === s.id}>
-                    {deletingSkillId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                  </Button>
-                </Badge>
-              ))}
-              {learned.length === 0 && <p className="text-sm text-muted-foreground">No learned skills yet.</p>}
+              {isLoadingSkills ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Loading skills...</span>
+                </div>
+              ) : (
+                learned.map((s) => (
+                  <Badge key={s.id} variant="outline" className="px-3 py-1 rounded-full">
+                    <span className="mr-2">{s.name}</span>
+                    <span className={cn("text-xs px-2 py-0.5 rounded-full", levelColor(s.level))}>{s.level}</span>
+                    <Button variant="ghost" size="icon" className="ml-1 h-4 w-4 rounded-full" onClick={() => removeSkill(s.id, s.type)} disabled={deletingSkillId === s.id}>
+                      {deletingSkillId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    </Button>
+                  </Badge>
+                ))
+              )}
+              {!isLoadingSkills && learned.length === 0 && <p className="text-sm text-muted-foreground">No learned skills yet.</p>}
             </div>
           </CardContent>
         </Card>
@@ -674,16 +682,23 @@ function SkillsSection() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="flex flex-wrap gap-2">
-              {taught.map((s) => (
-                <Badge key={s.id} variant="outline" className="px-3 py-1 rounded-full">
-                  <span className="mr-2">{s.name}</span>
-                  <span className={cn("text-xs px-2 py-0.5 rounded-full", levelColor(s.level))}>{s.level}</span>
-                  <Button variant="ghost" size="icon" className="ml-1 h-4 w-4 rounded-full" onClick={() => removeSkill(s.id, s.type)} disabled={deletingSkillId === s.id}>
-                    {deletingSkillId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                  </Button>
-                </Badge>
-              ))}
-              {taught.length === 0 && <p className="text-sm text-muted-foreground">No taught skills yet.</p>}
+              {isLoadingSkills ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Loading skills...</span>
+                </div>
+              ) : (
+                taught.map((s) => (
+                  <Badge key={s.id} variant="outline" className="px-3 py-1 rounded-full">
+                    <span className="mr-2">{s.name}</span>
+                    <span className={cn("text-xs px-2 py-0.5 rounded-full", levelColor(s.level))}>{s.level}</span>
+                    <Button variant="ghost" size="icon" className="ml-1 h-4 w-4 rounded-full" onClick={() => removeSkill(s.id, s.type)} disabled={deletingSkillId === s.id}>
+                      {deletingSkillId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    </Button>
+                  </Badge>
+                ))
+              )}
+              {!isLoadingSkills && taught.length === 0 && <p className="text-sm text-muted-foreground">No taught skills yet.</p>}
             </div>
           </CardContent>
           <CardFooter className="pt-0">
