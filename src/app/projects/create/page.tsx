@@ -81,12 +81,13 @@ export default function CreateProjectPage() {
       })
 
       if (!res.ok) throw new Error('Failed to create project')
-      const data = await res.json()
+      await res.json()
       toast.success('Project created')
       router.push('/projects')
-    } catch (err: any) {
-      console.error(err)
-      toast.error(err?.message || 'Failed to create project')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(msg)
+      toast.error(msg || 'Failed to create project')
     } finally {
       setIsSaving(false)
     }
@@ -156,7 +157,7 @@ export default function CreateProjectPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium">Team Size / Roles Needed</label>
-              <Input value={teamSize as any} onChange={(e) => setTeamSize(e.target.value ? Number(e.target.value) : '')} placeholder="e.g., 4" />
+              <Input value={teamSize === '' ? '' : String(teamSize)} onChange={(e) => setTeamSize(e.target.value ? Number(e.target.value) : '')} placeholder="e.g., 4" />
             </div>
             <div>
               <label className="text-sm font-medium">Status</label>
@@ -170,7 +171,7 @@ export default function CreateProjectPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium">Timeline / Duration (weeks)</label>
-              <Input value={durationWeeks as any} onChange={(e) => setDurationWeeks(e.target.value ? Number(e.target.value) : '')} placeholder="e.g., 6" />
+              <Input value={durationWeeks === '' ? '' : String(durationWeeks)} onChange={(e) => setDurationWeeks(e.target.value ? Number(e.target.value) : '')} placeholder="e.g., 6" />
             </div>
 
             <div>

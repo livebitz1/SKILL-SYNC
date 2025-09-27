@@ -17,25 +17,44 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Search, Filter, Users, Calendar, Eye, Plus, Check, Trash } from "lucide-react"
 import { useUser } from '@clerk/nextjs'
 import { toast } from 'react-hot-toast'
+ 
+ type Difficulty = "Beginner" | "Intermediate" | "Advanced"
+ 
+ type Project = {
+   id: string
+   title: string
+   shortDescription: string
+   description: string
+   category: string
+   difficulty: Difficulty
+   durationWeeks: number | null
+   status: "Open" | "Closed"
+   requiredSkills: string[]
+   collaborators: ({ id: string; name: string; avatar?: string; role?: string; application?: { fullName?: string | null; contactInfo?: string | null; portfolioUrl?: string | null; skills?: string[]; preferredRole?: string | null; availability?: string | null; motivation?: string | null; agreedToGuidelines?: boolean; status?: string | null; acceptedAt?: string | null } })[]
+   creator: { id: string; name: string; avatar?: string; role?: string }
+   bannerUrl?: string | null
+   attachments?: string[]
+   featured?: boolean
+ }
 
-type Difficulty = "Beginner" | "Intermediate" | "Advanced"
-
-type Project = {
-  id: string
-  title: string
-  shortDescription: string
-  description: string
-  category: string
-  difficulty: Difficulty
-  durationWeeks: number | null
-  status: "Open" | "Closed"
-  requiredSkills: string[]
-  collaborators: ({ id: string; name: string; avatar?: string; role?: string; application?: { fullName?: string | null; contactInfo?: string | null; portfolioUrl?: string | null; skills?: string[]; preferredRole?: string | null; availability?: string | null; motivation?: string | null; agreedToGuidelines?: boolean } })[]
-  creator: { id: string; name: string; avatar?: string; role?: string }
-  bannerUrl?: string | null
-  attachments?: string[]
-  featured?: boolean
-}
+ type Applicant = {
+   id?: string
+   name?: string
+   avatar?: string
+   role?: string
+   application?: {
+     fullName?: string | null
+     contactInfo?: string | null
+     portfolioUrl?: string | null
+     skills?: string[]
+     preferredRole?: string | null
+     availability?: string | null
+     motivation?: string | null
+     agreedToGuidelines?: boolean
+     status?: string | null
+     acceptedAt?: string | null
+   } | null
+ }
 
 export default function ProjectsPage() {
   const { user } = useUser()
@@ -92,10 +111,10 @@ export default function ProjectsPage() {
         return
       }
       const data = await res.json()
-      setProjects(data)
+      setProjects(Array.isArray(data) ? data as Project[] : [])
       setFetchError(null)
     } catch (err) {
-      if ((err as any)?.name === 'AbortError') return
+      if ((err as unknown as { name?: string })?.name === 'AbortError') return
       // avoid noisy console errors in production; set compact error state
       setFetchError('Unable to load projects. Please try again later.')
     } finally {
@@ -176,12 +195,12 @@ export default function ProjectsPage() {
     setJoinProject(p)
     // prefill form with user info when available
     if (user) {
-      const u: any = user
+      const u = user as unknown as Record<string, unknown>
       setJoinForm((f) => ({
         ...f,
-        fullName: `${(u.firstName || '')} ${(u.lastName || '')}`.trim() || (u.fullName || ''),
-        contactInfo: (u.primaryEmailAddress?.emailAddress) || (u.email || '') || (u.primaryEmail || '') || '',
-        portfolioUrl: (u.publicMetadata?.portfolioUrl) || (u.privateMetadata?.portfolioUrl) || (u?.portfolioUrl) || '',
+        fullName: `${(u.firstName as string || '')} ${(u.lastName as string || '')}`.trim() || (u.fullName as string || ''),
+        contactInfo: ((u.primaryEmailAddress as Record<string, unknown> | undefined)?.emailAddress as string | undefined) || (u.email as string | undefined) || (u.primaryEmail as string | undefined) || '',
+        portfolioUrl: ((u.publicMetadata as Record<string, unknown> | undefined)?.portfolioUrl as string | undefined) || ((u.privateMetadata as Record<string, unknown> | undefined)?.portfolioUrl as string | undefined) || (u?.portfolioUrl as string | undefined) || '',
       }))
     }
     setJoinOpen(true)
@@ -214,7 +233,7 @@ export default function ProjectsPage() {
       const res = await fetch('/api/projects/join', { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json' }, credentials: 'include' })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        toast.error(json?.error || 'Failed to submit application')
+        toast.error((json as Record<string, unknown>)?.error as string || 'Failed to submit application')
         return
       }
       toast.success('Application submitted')
@@ -238,11 +257,11 @@ export default function ProjectsPage() {
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
 
   // Applicant profile & approval flow
-  const [selectedApplicant, setSelectedApplicant] = useState<any | null>(null)
+  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null)
   const [applicantOpen, setApplicantOpen] = useState<boolean>(false)
   const [processingApplicantId, setProcessingApplicantId] = useState<string | null>(null)
 
-  function openApplicantProfile(c: any) {
+  function openApplicantProfile(c: Applicant) {
     setSelectedApplicant(c)
     setApplicantOpen(true)
   }
@@ -254,7 +273,7 @@ export default function ProjectsPage() {
       const res = await fetch(`/api/projects/member?projectId=${encodeURIComponent(manageProject.id)}&userId=${encodeURIComponent(memberId)}&action=${action}`, { method: 'PATCH', credentials: 'include' })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        toast.error(json?.error || 'Failed to update application')
+        toast.error((json as Record<string, unknown>)?.error as string || 'Failed to update application')
         return
       }
       toast.success(action === 'accept' ? 'Applicant accepted' : 'Applicant rejected')
@@ -601,7 +620,7 @@ export default function ProjectsPage() {
 
           <div className="mt-4">
             {myProjects.length === 0 ? (
-              <div className="py-8 text-center text-gray-600">You haven't joined any projects yet.</div>
+              <div className="py-8 text-center text-gray-600">You haven&apos;t joined any projects yet.</div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 gap-4">
                 {myProjects.map((m) => (
@@ -630,7 +649,7 @@ export default function ProjectsPage() {
 
             <div className="mt-4">
               {ownedProjects.length === 0 ? (
-                <div className="py-6 text-center text-gray-600">You haven't created any projects yet.</div>
+                <div className="py-6 text-center text-gray-600">You haven&apos;t created any projects yet.</div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {ownedProjects.map((op) => (
@@ -964,8 +983,8 @@ export default function ProjectsPage() {
                 <DialogClose asChild>
                   <Button variant="outline">Close</Button>
                 </DialogClose>
-                <Button className="bg-green-600 text-white" onClick={() => respondToApplicant(selectedApplicant.id, 'accept')} disabled={processingApplicantId === selectedApplicant.id}>{processingApplicantId === selectedApplicant.id ? 'Processing…' : 'Accept'}</Button>
-                <Button className="text-sm border border-gray-300 text-gray-800 bg-white px-3 py-1 rounded-md" onClick={() => respondToApplicant(selectedApplicant.id, 'reject')} disabled={processingApplicantId === selectedApplicant.id}>{processingApplicantId === selectedApplicant.id ? 'Processing…' : 'Reject'}</Button>
+                <Button className="bg-green-600 text-white" onClick={() => { if (selectedApplicant?.id) respondToApplicant(selectedApplicant.id, 'accept') }} disabled={processingApplicantId === selectedApplicant?.id}>{processingApplicantId === selectedApplicant?.id ? 'Processing…' : 'Accept'}</Button>
+                <Button className="text-sm border border-gray-300 text-gray-800 bg-white px-3 py-1 rounded-md" onClick={() => { if (selectedApplicant?.id) respondToApplicant(selectedApplicant.id, 'reject') }} disabled={processingApplicantId === selectedApplicant?.id}>{processingApplicantId === selectedApplicant?.id ? 'Processing…' : 'Reject'}</Button>
               </div>
             </div>
           ) : (
