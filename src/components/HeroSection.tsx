@@ -22,7 +22,7 @@ export default function HeroSection() {
 
   // compute the maximum visual width (approx) using character count and reserve that space
   const maxWordLength = Math.max(...rotatingWords.map((w) => w.length))
-  const rotatingContainerStyle: React.CSSProperties = { minWidth: `${maxWordLength}ch`, display: 'inlineFlex' as any }
+  const rotatingContainerStyle: React.CSSProperties = { minWidth: `${maxWordLength}ch`, display: 'inline-flex' }
 
   // index for current rotating word
   const [index, setIndex] = useState(0)
