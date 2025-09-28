@@ -22,7 +22,13 @@ export default function HeroSection() {
 
   // compute the maximum visual width (approx) using character count and reserve that space
   const maxWordLength = Math.max(...rotatingWords.map((w) => w.length))
-  const rotatingContainerStyle: React.CSSProperties = { minWidth: `${maxWordLength}ch`, display: 'inline-flex' }
+  // reserve width and center content both vertically and horizontally to avoid layout shift
+  const rotatingContainerStyle: React.CSSProperties = {
+    minWidth: `${maxWordLength}ch`,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  }
 
   // index for current rotating word
   const [index, setIndex] = useState(0)
@@ -93,12 +99,13 @@ export default function HeroSection() {
           <h1 className="text-pretty text-4xl font-semibold leading-tight text-foreground md:text-5xl">
             <span className="text-green-700">Learn Skills.</span> Build Projects.{" "}
             <span className="text-green-700">Collaborate</span> Across{' '}
-            <span className="rotating-container inline-block align-baseline" style={rotatingContainerStyle}>
-              {/* key forces re-mount so CSS entrance animation runs */}
-              <span key={currentWord} className="rotating-word text-green-700">
-                {currentWord}
-              </span>
-            </span>
+            {/* make the rotating word container use flex centering so the changing word stays centered */}
+            <span className="rotating-container inline-flex items-center justify-center align-middle" style={rotatingContainerStyle}>
+               {/* key forces re-mount so CSS entrance animation runs */}
+               <span key={currentWord} className="rotating-word text-green-700">
+                 {currentWord}
+               </span>
+             </span>
           </h1>
           <p className="mt-4 text-balance text-base leading-relaxed text-foreground/70 md:text-lg">
             A platform where learners, mentors, and collaborators connect to gain real-world experience.
