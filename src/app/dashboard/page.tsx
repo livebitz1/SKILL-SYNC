@@ -125,6 +125,21 @@ type Project = {
   tags: string[]
 }
 
+// Narrow type for raw project objects returned by the API to avoid using `any` everywhere
+type RawProject = {
+  id?: string
+  title?: string
+  name?: string
+  shortDescription?: string
+  description?: string
+  creator?: { id?: string }
+  collaborators?: Array<{ id?: string }>
+  status?: string
+  updatedAt?: string | Date
+  requiredSkills?: string[]
+  tags?: string[]
+}
+
 type Stat = {
   label: string
   value: number
@@ -908,17 +923,18 @@ function ProjectsSection() {
         const data = await res.json()
         // data is expected to be an array of mapped projects from the API
         const userId = user.id
-        const filtered = (Array.isArray(data) ? data : []).filter((p: any) => {
+        const rawArray: RawProject[] = Array.isArray(data) ? data as RawProject[] : []
+        const filtered = rawArray.filter((p) => {
           if (!p) return false
           const creatorId = p.creator?.id
           const collaborators = Array.isArray(p.collaborators) ? p.collaborators : []
           const isCreator = creatorId === userId
-          const isMember = collaborators.some((c: any) => String(c?.id) === String(userId))
+          const isMember = collaborators.some((c) => String(c?.id) === String(userId))
           return isCreator || isMember
         })
 
-        const mapped = filtered.map((p: any) => ({
-          id: p.id,
+        const mapped = filtered.map((p) => ({
+          id: String(p.id || uid()),
           name: p.title || p.name || 'Untitled',
           description: p.shortDescription || p.description || '',
           role: p.creator?.id === userId ? 'Leader' : 'Member',
@@ -1166,7 +1182,7 @@ function ProjectsSection() {
               <TableRow>
                 <TableCell colSpan={7}>
                   <div className="py-10 text-center text-sm text-muted-foreground">
-                    <div className="mb-2">You haven't joined or created any projects yet.</div>
+                    <div className="mb-2">You haven&apos;t joined or created any projects yet.</div>
                     <div className="flex items-center justify-center gap-2">
                       <Link href="/projects" className="underline">Browse projects</Link>
                       <Button onClick={() => setOpenDialog(true)} className="rounded-full">Create a project</Button>
@@ -1241,14 +1257,75 @@ function PortfolioSection() {
 }
 
 function StatsAchievementsSection() {
-  const stats = initialStats
+  const { user } = useUser()
+  const [isLoading, setIsLoading] = useState(true)
+  const [skillsCount, setSkillsCount] = useState(0)
+  const [createdCount, setCreatedCount] = useState(0)
+  const [participatedCount, setParticipatedCount] = useState(0)
 
-  // Fake completion progress calculation
+  useEffect(() => {
+    let mounted = true
+    const load = async () => {
+      if (!user || !user.id) {
+        if (mounted) setIsLoading(false)
+        return
+      }
+      setIsLoading(true)
+      try {
+        // fetch user skills
+        const skillsRes = await fetch('/api/user-skills')
+        const skillsData = skillsRes.ok ? await skillsRes.json().catch(() => []) : []
+        const skills = Array.isArray(skillsData) ? skillsData : []
+
+        // fetch projects and filter to those the user created or is a collaborator on
+        const projectsRes = await fetch('/api/projects')
+        const projectsData = projectsRes.ok ? await projectsRes.json().catch(() => []) : []
+        const userId = user.id
+        const rawProjects: RawProject[] = Array.isArray(projectsData) ? projectsData as RawProject[] : []
+        const userProjects = rawProjects.filter((p) => {
+          const creatorId = p.creator?.id
+          const collaborators = Array.isArray(p.collaborators) ? p.collaborators : []
+          const isCreator = creatorId === userId
+          const isMember = collaborators.some((c) => String(c?.id) === String(userId))
+          return isCreator || isMember
+        })
+
+        const created = userProjects.filter((p) => p.creator && String(p.creator.id) === String(userId)).length
+        const participated = userProjects.filter((p) => !(p.creator && String(p.creator.id) === String(userId))).length
+
+        if (mounted) {
+          setSkillsCount(Array.isArray(skills) ? skills.length : 0)
+          setCreatedCount(created)
+          setParticipatedCount(participated)
+        }
+      } catch (err) {
+        console.error('Failed to load stats:', err)
+        if (mounted) {
+          setSkillsCount(0)
+          setCreatedCount(0)
+          setParticipatedCount(0)
+        }
+      } finally {
+        if (mounted) setIsLoading(false)
+      }
+    }
+    load()
+    return () => { mounted = false }
+  }, [user])
+
+  // Build chart data from real counts. We show three categories: Skills, Created, Participated.
+  const chartData = [
+    { label: 'Skills', skills: skillsCount, projects: 0 },
+    { label: 'Created', skills: 0, projects: createdCount },
+    { label: 'Participated', skills: 0, projects: participatedCount },
+  ]
+
+  // Simple heuristic for profile completion: skill coverage + project involvement
   const completion = useMemo(() => {
-    const total = 100
-    const base = Math.min(100, Math.round((stats[0].value / 25) * 100))
-    return Math.min(total, base)
-  }, [stats])
+    const skillScore = Math.min(50, skillsCount * 5) // up to 50 points
+    const projectScore = Math.min(50, (createdCount + participatedCount) * 10) // up to 50 points
+    return Math.min(100, Math.round(skillScore + projectScore))
+  }, [skillsCount, createdCount, participatedCount])
 
   return (
     <section aria-label="Stats and Achievements" className="container mx-auto px-4 pt-8">
@@ -1259,29 +1336,30 @@ function StatsAchievementsSection() {
               <LineChart className="h-4 w-4 mr-2" />
               Overview
             </CardTitle>
-            <CardDescription>Skills and projects activity over the last 4 weeks.</CardDescription>
+            <CardDescription>Skills and project participation summary for your profile.</CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
-            <ChartContainer
-              className="h-[200px]"
-            >
-              {/* Using Recharts per shadcn/ui chart helper */}
-              {/* We avoid bringing full chart code here; ChartTooltip handles consistent tooltip styles */}
-              {/* The line/bar components rely on --color-skills and --color-projects */}
-              {/* The ChartContainer provides context variables for theme colors */}
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={activityData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="week" />
-                  <YAxis />
-                  <ChartTooltip>
-                    <ChartTooltipContent />
-                  </ChartTooltip>
-                  <Bar dataKey="skills" fill="var(--color-skills)" radius={[4, 4, 0, 0]} />
-                  <Line type="monotone" dataKey="projects" stroke="var(--color-projects)" strokeWidth={2} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </ChartContainer>
+            {isLoading ? (
+              <div className="py-6 flex items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">Loading stats...</span>
+              </div>
+            ) : (
+              <ChartContainer className="h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" />
+                    <YAxis allowDecimals={false} />
+                    <ChartTooltip>
+                      <ChartTooltipContent />
+                    </ChartTooltip>
+                    <Bar dataKey="skills" fill="var(--color-skills)" radius={[4, 4, 0, 0]} />
+                    <Line type="monotone" dataKey="projects" stroke="var(--color-projects)" strokeWidth={2} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            )}
           </CardContent>
           <CardFooter className="pt-2">
             <div className="w-full space-y-2">
@@ -1290,6 +1368,11 @@ function StatsAchievementsSection() {
                 <span className="font-medium">{completion}%</span>
               </div>
               <Progress value={completion} className="h-2" />
+              <div className="flex items-center justify-between text-xs text-muted-foreground pt-2">
+                <div>Skills: <span className="font-medium text-foreground">{skillsCount}</span></div>
+                <div>Created: <span className="font-medium text-foreground">{createdCount}</span></div>
+                <div>Participated: <span className="font-medium text-foreground">{participatedCount}</span></div>
+              </div>
             </div>
           </CardFooter>
         </Card>
@@ -1304,17 +1387,35 @@ function StatsAchievementsSection() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {stats.map((s) => (
-                <div key={s.label} className="flex items-center gap-3 rounded-lg border p-3">
-                  <div className="h-9 w-9 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-                    <s.icon className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <div className="text-sm text-muted-foreground">{s.label}</div>
-                    <div className="text-base font-semibold">{s.value}</div>
-                  </div>
+              <div className="flex items-center gap-3 rounded-lg border p-3">
+                <div className="h-9 w-9 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+                  <CheckSquare className="h-4 w-4" />
                 </div>
-              ))}
+                <div>
+                  <div className="text-sm text-muted-foreground">Skills</div>
+                  <div className="text-base font-semibold">{skillsCount}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 rounded-lg border p-3">
+                <div className="h-9 w-9 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+                  <Users className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Projects (joined)</div>
+                  <div className="text-base font-semibold">{participatedCount}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 rounded-lg border p-3">
+                <div className="h-9 w-9 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+                  <Briefcase className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Projects (created)</div>
+                  <div className="text-base font-semibold">{createdCount}</div>
+                </div>
+              </div>
             </div>
           </CardContent>
           <CardFooter className="pt-0">
@@ -1361,6 +1462,7 @@ function StatsAchievementsSection() {
   )
 }
 
+// Footer component (internal to this file)
 function Footer() {
   return (
     <footer className="mt-12 border-t">
