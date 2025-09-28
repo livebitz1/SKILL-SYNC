@@ -876,11 +876,13 @@ function SkillsSection() {
 }
 
 function ProjectsSection() {
-  const [projects, setProjects] = useState<Project[]>(initialProjects)
+  const { user } = useUser()
+  const [projects, setProjects] = useState<Project[]>([])
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "All">("All")
   const [roleFilter, setRoleFilter] = useState<ProjectRole | "All">("All")
   const [openDialog, setOpenDialog] = useState(false)
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true)
 
   // New project dialog state
   const [pName, setPName] = useState("")
@@ -888,45 +890,133 @@ function ProjectsSection() {
   const [pRole, setPRole] = useState<ProjectRole>("Member")
   const [pStatus, setPStatus] = useState<ProjectStatus>("Ongoing")
   const [pTags, setPTags] = useState<string>("Next.js, Teamwork")
+  const [isCreating, setIsCreating] = useState(false)
+
+  // Fetch projects from API and filter to those the user has joined or created
+  useEffect(() => {
+    let mounted = true
+    const fetchUserProjects = async () => {
+      if (!user || !user.id) {
+        setProjects([])
+        setIsLoadingProjects(false)
+        return
+      }
+      setIsLoadingProjects(true)
+      try {
+        const res = await fetch('/api/projects')
+        if (!res.ok) throw new Error('Failed to fetch projects')
+        const data = await res.json()
+        // data is expected to be an array of mapped projects from the API
+        const userId = user.id
+        const filtered = (Array.isArray(data) ? data : []).filter((p: any) => {
+          if (!p) return false
+          const creatorId = p.creator?.id
+          const collaborators = Array.isArray(p.collaborators) ? p.collaborators : []
+          const isCreator = creatorId === userId
+          const isMember = collaborators.some((c: any) => String(c?.id) === String(userId))
+          return isCreator || isMember
+        })
+
+        const mapped = filtered.map((p: any) => ({
+          id: p.id,
+          name: p.title || p.name || 'Untitled',
+          description: p.shortDescription || p.description || '',
+          role: p.creator?.id === userId ? 'Leader' : 'Member',
+          status: (p.status as ProjectStatus) || 'Ongoing',
+          participants: Array.isArray(p.collaborators) ? (p.collaborators.length + (p.creator?.id ? 1 : 0)) : 1,
+          updatedAt: p.updatedAt ? String(p.updatedAt).slice(0, 10) : '',
+          tags: Array.isArray(p.requiredSkills) ? p.requiredSkills : (Array.isArray(p.tags) ? p.tags : []),
+        })) as Project[]
+
+        if (mounted) setProjects(mapped)
+      } catch (err) {
+        console.error('Failed to load projects for dashboard:', err)
+        if (mounted) setProjects([])
+      } finally {
+        if (mounted) setIsLoadingProjects(false)
+      }
+    }
+    fetchUserProjects()
+    return () => { mounted = false }
+  }, [user])
 
   const filtered = useMemo(() => {
     return projects.filter((p) => {
       const matchesQuery =
         p.name.toLowerCase().includes(query.toLowerCase()) ||
         p.description.toLowerCase().includes(query.toLowerCase()) ||
-        p.tags.join(",").toLowerCase().includes(query.toLowerCase())
-      const matchesStatus = statusFilter === "All" ? true : p.status === statusFilter
-      const matchesRole = roleFilter === "All" ? true : p.role === roleFilter
+        p.tags.join(',').toLowerCase().includes(query.toLowerCase())
+      const matchesStatus = statusFilter === 'All' ? true : p.status === statusFilter
+      const matchesRole = roleFilter === 'All' ? true : p.role === roleFilter
       return matchesQuery && matchesStatus && matchesRole
     })
   }, [projects, query, statusFilter, roleFilter])
 
-  function addProject() {
+  async function addProject() {
+    if (!user || !user.id) {
+      toast.error('You need to be logged in to create a project.')
+      return
+    }
     const name = pName.trim()
     const desc = pDesc.trim()
     if (!name || !desc) return
+
     const tags = pTags
-      .split(",")
+      .split(',')
       .map((t) => t.trim())
       .filter(Boolean)
-    const newP: Project = {
-      id: uid(),
-      name,
-      description: desc,
-      role: pRole,
-      status: pStatus,
-      participants: Math.floor(Math.random() * 10) + 3,
-      updatedAt: new Date().toISOString().slice(0, 10),
-      tags,
+
+    setIsCreating(true)
+    try {
+      const body = {
+        title: name,
+        shortDescription: desc.slice(0, 160),
+        description: desc,
+        category: 'Other',
+        requiredSkills: tags,
+        difficulty: 'Intermediate',
+        teamSize: null,
+        status: pStatus,
+        durationWeeks: null,
+        creatorId: user.id,
+        attachments: [],
+        bannerUrl: null,
+      }
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to create project')
+      }
+      const created = await res.json()
+      const mapped: Project = {
+        id: created.id,
+        name: created.title || name,
+        description: created.shortDescription || created.description || desc,
+        role: created.creator?.id === user.id ? 'Leader' : 'Member',
+        status: (created.status as ProjectStatus) || pStatus,
+        participants: Array.isArray(created.collaborators) ? (created.collaborators.length + (created.creator?.id ? 1 : 0)) : 1,
+        updatedAt: created.updatedAt ? String(created.updatedAt).slice(0, 10) : new Date().toISOString().slice(0, 10),
+        tags: Array.isArray(created.requiredSkills) ? created.requiredSkills : tags,
+      }
+      setProjects((prev) => [mapped, ...prev])
+      toast.success('Project created')
+      // reset
+      setPName('')
+      setPDesc('')
+      setPTags('Next.js, Teamwork')
+      setPRole('Member')
+      setPStatus('Ongoing')
+      setOpenDialog(false)
+    } catch (err) {
+      console.error('Create project failed', err)
+      toast.error('Failed to create project')
+    } finally {
+      setIsCreating(false)
     }
-    setProjects((prev) => [newP, ...prev])
-    // reset
-    setPName("")
-    setPDesc("")
-    setPTags("Next.js, Teamwork")
-    setPRole("Member")
-    setPStatus("Ongoing")
-    setOpenDialog(false)
   }
 
   function setStatus(id: string, status: ProjectStatus) {
@@ -934,6 +1024,7 @@ function ProjectsSection() {
   }
 
   function removeProject(id: string) {
+    // optimistic UI update; backend deletion handled elsewhere if user clicks action
     setProjects((prev) => prev.filter((p) => p.id !== id))
   }
 
@@ -952,7 +1043,7 @@ function ProjectsSection() {
             />
           </div>
 
-          <Select value={statusFilter} onValueChange={(v: ProjectStatus | "All") => setStatusFilter(v)}>
+          <Select value={statusFilter} onValueChange={(v: ProjectStatus | 'All') => setStatusFilter(v)}>
             <SelectTrigger className="w-[130px] rounded-full">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -964,7 +1055,7 @@ function ProjectsSection() {
             </SelectContent>
           </Select>
 
-          <Select value={roleFilter} onValueChange={(v: ProjectRole | "All") => setRoleFilter(v)}>
+          <Select value={roleFilter} onValueChange={(v: ProjectRole | 'All') => setRoleFilter(v)}>
             <SelectTrigger className="w-[130px] rounded-full">
               <SelectValue placeholder="Role" />
             </SelectTrigger>
@@ -975,83 +1066,14 @@ function ProjectsSection() {
             </SelectContent>
           </Select>
 
-          <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-            <DialogTrigger asChild>
-              <Button variant="default" className="rounded-full">
-                <Plus className="h-4 w-4 mr-2" />
-                New Project
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[560px]">
-              <DialogHeader>
-                <DialogTitle>Create a new project</DialogTitle>
-                <DialogDescription>Define the basic details and status for your project.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-3 py-2">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium">Name</label>
-                    <Input
-                      placeholder="e.g., Open Campus Hub"
-                      value={pName}
-                      onChange={(e) => setPName(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Tags (comma separated)</label>
-                    <Input placeholder="e.g., React, Data" value={pTags} onChange={(e) => setPTags(e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Description</label>
-                  <Textarea
-                    placeholder="Short description of the project goal..."
-                    value={pDesc}
-                    onChange={(e) => setPDesc(e.target.value)}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Role</label>
-                    <Select value={pRole} onValueChange={(v: ProjectRole) => setPRole(v)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Leader">Leader</SelectItem>
-                        <SelectItem value="Member">Member</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Status</label>
-                    <Select value={pStatus} onValueChange={(v: ProjectStatus) => setPStatus(v)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Ongoing">Ongoing</SelectItem>
-                        <SelectItem value="Completed">Completed</SelectItem>
-                        <SelectItem value="Paused">Paused</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-              <DialogFooter className="gap-2">
-                <DialogClose asChild>
-                  <Button variant="outline" className="rounded-full bg-transparent">
-                    Cancel
-                  </Button>
-                </DialogClose>
-                <Button onClick={addProject} className="rounded-full">
-                  Create
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+          <Button variant="default" className="rounded-full" asChild>
+            <Link href="/projects/create">
+              <Plus className="h-4 w-4 mr-2" />
+              New Project
+            </Link>
+          </Button>
+         </div>
+       </div>
 
       <Card className="border shadow-sm overflow-hidden">
         <Table>
@@ -1067,7 +1089,15 @@ function ProjectsSection() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((p) => (
+            {isLoadingProjects ? (
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <div className="py-10 text-center text-sm text-muted-foreground">
+                    Loading your projects...
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : filtered.map((p) => (
               <TableRow key={p.id}>
                 <TableCell className="align-top">
                   <div className="flex items-center gap-2">
@@ -1115,9 +1145,9 @@ function ProjectsSection() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-40">
                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuItem onClick={() => setStatus(p.id, "Ongoing")}>Mark Ongoing</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setStatus(p.id, "Completed")}>Mark Completed</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setStatus(p.id, "Paused")}>Mark Paused</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setStatus(p.id, 'Ongoing')}>Mark Ongoing</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setStatus(p.id, 'Completed')}>Mark Completed</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setStatus(p.id, 'Paused')}>Mark Paused</DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem>
                         <PencilLine className="h-4 w-4 mr-2" /> Edit
@@ -1132,11 +1162,15 @@ function ProjectsSection() {
               </TableRow>
             ))}
 
-            {filtered.length === 0 && (
+            {!isLoadingProjects && filtered.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7}>
                   <div className="py-10 text-center text-sm text-muted-foreground">
-                    No projects found for the selected filters.
+                    <div className="mb-2">You haven't joined or created any projects yet.</div>
+                    <div className="flex items-center justify-center gap-2">
+                      <Link href="/projects" className="underline">Browse projects</Link>
+                      <Button onClick={() => setOpenDialog(true)} className="rounded-full">Create a project</Button>
+                    </div>
                   </div>
                 </TableCell>
               </TableRow>

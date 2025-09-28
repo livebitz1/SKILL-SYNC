@@ -11,7 +11,7 @@ export default function Navbar() {
         <div className="flex items-center gap-2">
           <span className="sr-only">Skill Training and Project Collaboration</span>
           <Link href="/" className="text-xl font-semibold tracking-tight text-green-700">
-            SkillCollab
+            SkillSync
           </Link>
         </div>
 
@@ -20,14 +20,8 @@ export default function Navbar() {
           <Link href="/" className="text-sm font-medium text-foreground/80 hover:text-foreground">
             Home
           </Link>
-          <Link href="/skills" className="text-sm font-medium text-foreground/80 hover:text-foreground">
-            Skills
-          </Link>
           <Link href="/projects" className="text-sm font-medium text-foreground/80 hover:text-foreground">
             Projects
-          </Link>
-          <Link href="/about" className="text-sm font-medium text-foreground/80 hover:text-foreground">
-            About
           </Link>
           <Link href="/learn" className="text-sm font-medium text-foreground/80 hover:text-foreground">
             Learn
